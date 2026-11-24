@@ -344,7 +344,7 @@ async function renderAudio(arr,prog){
  if(arr.warm){const a=ca(arr.warm,sr);for(const ch of[aL,aR]){let y=0;for(let i=0;i<len;i++){y+=a*(ch[i]-y);ch[i]=y}}}
  if(arr.crackle){const a=ca(1200,sr);let l=0;for(let i=0;i<len;i++){const r=(Math.random()<.0007?rnd()*.5:0)+rnd()*.01;l+=a*(r-l);const x=(r-l)*.5;aL[i]+=x;aR[i]+=x*.8}}
  const rms=(L,act)=>{let s=0,n=0;for(let i=0;i<len;i+=4){const x=L[i];if(!act||Math.abs(x)>2e-3){s+=x*x;n++}}return Math.sqrt(s/Math.max(1,n))};
- const ra=rms(aL),rm=rms(mL,1),gm=rm>0?Math.max(.6,Math.min(8,ra*1.05/rm)):1;
+ const ra=rms(aL),rm=rms(mL,1),gm=rm>0?Math.max(1,Math.min(10,ra*1.8/rm)):1;
  let pk=1e-6;for(let i=0;i<len;i++){const l=Math.abs(aL[i]+mL[i]*gm),r=Math.abs(aR[i]+mR[i]*gm);if(l>pk)pk=l;if(r>pk)pk=r}
  const g=1.5/pk,mk=(L,R,k)=>{const b=ctx.createBuffer(2,len,sr);for(const c of[L,R])for(let i=0;i<len;i++)c[i]=Math.tanh(c[i]*k)*.62;b.copyToChannel(L,0);b.copyToChannel(R,1);return b};
  const acc=mk(aL,aR,g),k=g*gm,notes=arr.mel.concat(arr.extra||[]).map(e=>{const G2=GEN[e.i]||GEN.piano,L=Math.min(G2(TMP,mtof(e.n),Math.min(e.d,6),e.v,sr,e.n),TMP.length),vol=(BUS[e.i]||[1])[0],b=ctx.createBuffer(1,L,sr),d=b.getChannelData(0);
@@ -488,7 +488,6 @@ async function start(song){
   busy();
   const ch=buildChart(song,D,look,notes,extras);if(!ch.tiles.length){toast('Pas assez de notes pour faire des tuiles');return}
   stopGame();$('#home').hidden=true;$('#game').hidden=false;$('#ov').hidden=true;resize();
-  if(matchMedia('(pointer:coarse)').matches&&document.documentElement.requestFullscreen&&!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});
   const bus=ctx.createGain();bus.connect(master);const mg=ctx.createGain();mg.connect(melBus);
   const lead=look+1,t0=ctxNow()+lead;
   G={song,D,look,...ch,bus,mg,beats,bi:0,lo:0,dlo:0,score:0,combo:0,maxC:0,lives:S.zen?Infinity:D.lives,cnt:[0,0,0,0],live:true,paused:false,pt:0,
@@ -505,7 +504,7 @@ function melDip(){}
 function geo(){const H=cv.height,ly=H*.82;return{H,ly,pps:ly/G.look}}
 
 /* entrées : tolérantes, multitouch */
-function down(lane,id){if(!G||!G.live||G.paused)return;const t=now(),w=G.D.win,{H,ly,pps}=geo(),early=G.look*.5,late=Math.max(w*1.3,(H-ly)/pps*.85);
+function down(lane,id){if(!G||!G.live||G.paused)return;const t=now(),w=G.D.win,{H,ly,pps}=geo(),early=G.look*.97,late=Math.max(w*1.3,(H-ly)/pps*.85);
  G.press[lane]++;G.ids.set(id,lane);
  for(let j=G.lo;j<G.tiles.length;j++){const x=G.tiles[j];if(x.t-t>early)break;if(x.res||x.lane!==lane||t-x.t>late)continue;hit(x,t,id);return}
  if(t-G.lastHit[lane]<.35||t<0)return;
