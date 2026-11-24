@@ -175,7 +175,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.13.0';
+const VERSION='0.14.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -185,7 +185,7 @@ let toastT;const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('
 
 /* ================= difficultés ================= */
 const DIFFS={
- facile:{name:'Facile',look:1.9,gap:.4,tempo:.95,lives:5,win:.2,hold:false,wrong:false,dbl:0,fill:0,desc:'Une tuile par petite phrase, 5 vies, les fausses touches ne comptent pas.'},
+ facile:{name:'Facile',look:1.9,gap:.4,tempo:.95,lives:5,win:.2,hold:false,wrong:false,dbl:0,fill:0,desc:'Seulement les notes principales de la mélodie, 5 vies, les fausses touches ne comptent pas.'},
  normal:{name:'Normal',look:1.45,gap:.26,tempo:1,lives:4,win:.16,hold:true,wrong:false,dbl:.25,fill:0,desc:'Tempo d\'origine, tuiles longues, quelques doubles, 4 vies.'},
  avance:{name:'Avancé',look:1.15,gap:.18,tempo:1.08,lives:3,win:.13,hold:true,wrong:false,dbl:.4,fill:.5,desc:'Plus rapide, presque toutes les notes, un peu d\'accompagnement, 3 vies.'},
  difficile:{name:'Difficile',look:.98,gap:.14,tempo:1.14,lives:3,win:.11,hold:true,wrong:true,dbl:.5,fill:1,desc:'Rapide, accompagnement sur les temps, les fausses touches coûtent une vie.'},
@@ -515,6 +515,13 @@ function ensureCtx(){if(ctx)return ctx;const AC=window.AudioContext||window.webk
  const cv=ctx.createConvolver();cv.buffer=ir;const wet=ctx.createGain();wet.gain.value=.35;cv.connect(wet);wet.connect(master);
  melBus=ctx.createGain();melBus.connect(master);melBus.connect(cv);return ctx}
 let lastCT=-1,lastPT=0;
+const clk={o:null,lat:null,last:0};
+/* temps audio réellement entendu (getOutputTimestamp), lissé ; latence = avance du moteur sur le haut-parleur */
+function heardNow(){const pt=performance.now()/1000;let ts=null;try{ts=ctx.getOutputTimestamp?ctx.getOutputTimestamp():null}catch(e){}
+ if(ts&&ts.contextTime>0&&ts.performanceTime>0&&ctx.state==='running'){const o=ts.contextTime-ts.performanceTime/1000;clk.o=clk.o==null||Math.abs(o-clk.o)>.25?o:clk.o+.06*(o-clk.o);
+  const l=ctx.currentTime-(pt+clk.o);clk.lat=clk.lat==null?l:clk.lat+.04*(l-clk.lat)}
+ const v=clk.o==null?ctxNow()-(ctx.outputLatency||ctx.baseLatency||0):pt+clk.o;clk.last=Math.max(clk.last,v);return clk.last}
+const latNow=()=>clk.lat!=null?Math.max(0,Math.min(.4,clk.lat)):(ctx.outputLatency||ctx.baseLatency||0);
 function ctxNow(){const ct=ctx.currentTime,pt=performance.now()/1000;if(ct!==lastCT){lastCT=ct;lastPT=pt}return ct+(ctx.state==='running'?Math.min(pt-lastPT,.04):0)}
 
 /* ================= détection de rythme (imports audio) ================= */
@@ -707,7 +714,7 @@ function buildChart(song,D,look,mel,extra){
   src.sort((a,b)=>a.x.t-b.x.t||a.f-b.f);tiles=[];
   for(const {x,i,f} of src){const last=tiles[tiles.length-1],t=x.t+.05;
    if(!last||t-last.t>=D.gap)tiles.push({t,d:x.d,merged:0,main:i,fill:f,ns:[{i,dt:0}]});
-   else{const dt=t-last.t;if(dt>.03)last.merged++;last.ns.push({i,dt});last.d=Math.max(last.d,dt+x.d)}}
+   else{const dt=t-last.t;if(dt>.03){last.merged++;continue}last.ns.push({i,dt})}}
   for(const x of tiles)if(!x.fill&&!x.merged&&hOf.has(x.main)&&rng()<D.dbl)x.dbl=hOf.get(x.main)}
  const gs=tiles.slice(1).map((x,i)=>x.t-tiles[i].t).sort((a,b)=>a-b),med=gs.length?gs[gs.length>>1]:1,gm=gs.length?gs[0]:1;
  const tileS=Math.max(look*.1,Math.min(Math.max(gm,.06)*1.85,look*.27));
@@ -716,8 +723,8 @@ function buildChart(song,D,look,mel,extra){
  const lt=tiles.reduce((a,x)=>Math.max(a,x.t+x.hd),0);return{tiles,tileS,end:lt}}
 
 /* ================= jeu ================= */
-const cv=$('#cv'),cx=cv.getContext('2d',{alpha:false});let G=null,raf=0,dpr=1;
-function resize(){dpr=Math.min(window.devicePixelRatio||1,2.5);cv.width=Math.round(cv.clientWidth*dpr);cv.height=Math.round(cv.clientHeight*dpr)}
+const cv=$('#cv'),cx=cv.getContext('2d',{alpha:false,desynchronized:true});let G=null,raf=0,dpr=1;
+function resize(){dpr=Math.min(window.devicePixelRatio||1,2);cv.width=Math.round(cv.clientWidth*dpr);cv.height=Math.round(cv.clientHeight*dpr)}
 window.addEventListener('resize',()=>{if(G)resize()});
 const PAIR=[['#7f98bd','#56708f'],['#7aaba2','#52807a'],['#9d93bb','#6f668f'],['#bb93a5','#8d6778']];
 const rr=(x,y,w,h,r)=>{cx.beginPath();if(cx.roundRect)cx.roundRect(x,y,w,Math.max(0,h),r);else cx.rect(x,y,w,Math.max(0,h))};
@@ -739,14 +746,14 @@ async function start(song){
   const ch=buildChart(song,D,look,notes,extras);if(!ch.tiles.length){toast('Pas assez de notes pour faire des tuiles');return}
   stopGame();$('#home').hidden=true;$('#game').hidden=false;$('#ov').hidden=true;resize();
   const bus=ctx.createGain();bus.connect(master);const mg=ctx.createGain();mg.connect(melBus);
-  const t0=ctxNow()+look+1,lg=ctx.createGain();lg.connect(melBus);
+  clk.o=null;clk.lat=null;clk.last=0;const t0=ctxNow()+look+1,lg=ctx.createGain();lg.connect(melBus);
   G={song,D,look,...ch,bus,mg,beats,bi:0,lo:0,dlo:0,score:0,combo:0,maxC:0,lives:S.zen||song.kind==='calib'?Infinity:D.lives,cnt:[0,0,0,0],live:true,paused:false,pt:0,
-   start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),lg:lead?lg:null,vs:lead?-(ctx.outputLatency||ctx.baseLatency||0):song.kind==='calib'?0:S.vis+.02,errs:[],off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};if(G.lg)G.lg.gain.value=1;
+   start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),lg:lead?lg:null,useLat:!lead,lead:lead?0:song.kind==='calib'?0:S.vis+.02,errs:[],off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};if(G.lg)G.lg.gain.value=1;
   for(const [b,dst] of [[acc,bus],[lead,lg]])if(b){const s=ctx.createBufferSource();s.buffer=b;s.connect(dst);s.start(t0);G.srcs.push(s)}
   hud(true);cancelAnimationFrame(raf);raf=requestAnimationFrame(frame)}
  catch(e){busy();toast((e&&e.message)||'Impossible de lancer ce morceau')}
  finally{starting=false}}
-const now=()=>ctxNow()-G.start+G.vs-G.off;
+const now=()=>heardNow()+(G.useLat?latNow():0)-G.start+G.lead-G.off;
 function stopGame(){if(!G)return;G.live=false;const b=G.bus,m=G.mg,srcs=G.srcs;try{b.gain.setTargetAtTime(0,ctx.currentTime,.08);m.gain.setTargetAtTime(0,ctx.currentTime,.08)}catch(e){}setTimeout(()=>{srcs.forEach(s=>{try{s.stop()}catch(e){}});try{b.disconnect();m.disconnect()}catch(e){}},500);cancelAnimationFrame(raf)}
 function hud(full){$('#score').textContent=fmtN(G.score);$('#combo').textContent=G.combo>=5?G.combo+' combo':'';
  if(full||G._lv!==G.lives){G._lv=G.lives;$('#lives').innerHTML=S.zen?'':Array.from({length:G.D.lives},(_,i)=>`<i class="${i<G.lives?'':'x'}"></i>`).join('')}}
@@ -800,7 +807,7 @@ function draw(t){const W=cv.width,{H,ly,pps}=geo(),lw=W/4,pad=2*dpr,T=G.tiles;
  for(let j=G.dlo;j<T.length;j++){const x=T[j],yb=ly-(x.t-t)*pps+off;if(yb<0)break;const h=(x.hd||G.tileS)*pps,yt=yb-h,x0=x.lane*lw+pad,w=lw-pad*2;if(yt>H)continue;
   if(x.res==='hit'&&!x.hd){const a=Math.max(0,1-(t-x.ht)/.25);cx.fillStyle=`rgba(18,16,20,${.12+a*.5})`;rr(x0,yt,w,h-pad,6*dpr);cx.fill();continue}
   if(x.res==='miss'){cx.fillStyle=(Math.floor((t-x.mt)*8)%2)?'#e5483b':'#121014';rr(x0,yt,w,h-pad,6*dpr);cx.fill();continue}
-  const g=cx.createLinearGradient(0,yt,0,yb),pal=x.pc!=null?PAIR[x.pc%PAIR.length]:['#2b2730','#0c0b0e'];g.addColorStop(0,pal[0]);g.addColorStop(1,pal[1]);
+  const pal=x.pc!=null?PAIR[x.pc%PAIR.length]:['#2b2730','#141217'],g=pal[1];
   cx.fillStyle=x.res==='hit'&&!x.holding?'rgba(18,16,20,.22)':g;rr(x0,yt,w,h-pad,6*dpr);cx.fill();
   if(x.hd){cx.fillStyle='rgba(243,239,230,.35)';cx.fillRect(x0+w/2-dpr,yt+10*dpr,2*dpr,Math.max(0,h-24*dpr));
    if(x.res==='hit'){const top=x.holding?Math.max(yt,ly):yb-h*(x.hp||0);cx.fillStyle='#ff5a4e';rr(x0,top,w,yb-top-pad,6*dpr);cx.fill()}
@@ -828,7 +835,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&G&&G.live&
 $('#pz').addEventListener('click',()=>pause());$('#pz').addEventListener('touchstart',e=>{e.stopPropagation()},{passive:true});
 function pause(){if(!G||!G.live||G.paused)return;G.pt=now();G.paused=true;try{ctx.suspend()}catch(e){}
  overlay(`<h3>Pause</h3><p class="hint" style="text-align:center">${esc(G.song.title)} · ${DIFFS[diffKey].name} · v${VERSION}</p><div class="acts"><button class="btn primary" data-a="resume">Reprendre</button><button class="btn" data-a="retry">Recommencer</button><button class="btn" data-a="menu">Menu</button></div>`)}
-async function resume(){if(!G)return;$('#ov').hidden=true;try{await ctx.resume()}catch(e){}lastCT=-1;G.paused=false}
+async function resume(){if(!G)return;$('#ov').hidden=true;try{await ctx.resume()}catch(e){}lastCT=-1;clk.o=null;clk.last=0;G.paused=false}
 function overlay(h){$('#ovc').innerHTML=h;$('#ov').hidden=false;const b=$('#ovc .primary');b&&b.focus()}
 $('#ovc').addEventListener('click',async e=>{const a=e.target.closest('[data-a]');if(!a)return;const s=G&&G.song;
  if(a.dataset.a==='resume')resume();else if(a.dataset.a==='retry'){try{await ctx.resume()}catch(e){}start(s)}else menu()});
