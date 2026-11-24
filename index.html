@@ -151,6 +151,9 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
       <span class="hint" style="margin:0">Si les tuiles arrivent avant le son (écouteurs Bluetooth), monte la valeur.</span></div>
     <label class="chk"><input type="checkbox" id="vib"> Vibrer quand je rate</label>
     <label class="chk"><input type="checkbox" id="zen"> Mode sans échec (on ne perd jamais)</label>
+    <div class="f"><label>Synchro image <output id="calO"></output></label>
+      <span class="hint" style="margin:0">Se règle tout seul au fil des parties. Pour le faire d'un coup : lance le calibrage et tape chaque tuile quand la ligne passe en son milieu, 16 tuiles, aucun son.</span>
+      <button class="btn" id="calB" type="button">Calibrer le timing</button></div>
   </details>
   <p class="foot">Morceaux intégrés : compositions du domaine public, jouées par un synthé intégré. Tes imports restent stockés dans ce navigateur.</p>
 </main>
@@ -172,7 +175,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.12.0';
+const VERSION='0.13.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -190,7 +193,7 @@ const DIFFS={
  maitre:{name:'Maître',look:.72,gap:.07,tempo:1.28,lives:1,win:.08,hold:true,wrong:true,dbl:.7,fill:2,desc:'Toutes les notes et tous les remplissages, une seule erreur et c\'est fini.'}
 };
 let diffKey=store.get('diff','normal');if(!DIFFS[diffKey])diffKey='normal';
-const S=Object.assign({spd:1,tmp:1,off:0,vib:true,zen:false},store.get('set',{}));
+const S=Object.assign({spd:1,tmp:1,off:0,vib:true,zen:false,vis:.01},store.get('set',{}));
 
 /* ================= styles d'arrangement ================= */
 /* motifs : une chaîne = une mesure de motif (pb temps), '.' = silence */
@@ -691,7 +694,8 @@ function lanes(tiles,rng,minH){const out=[];let prev=[],mode='rnd',left=0,dir=1,
  return out}
 function buildChart(song,D,look,mel,extra){
  const rng=rngOf(hash(song.id+'|'+diffKey));let tiles;
- if(song.kind==='audio'&&song.notes)tiles=noteChart(song,D,rng);
+ if(song.kind==='calib')tiles=song.tiles.map(x=>({...x,d:0,hd:0,merged:1,ns:[]}));
+ else if(song.kind==='audio'&&song.notes)tiles=noteChart(song,D,rng);
  else if(song.kind==='audio'){const gap=D.gap*1.25,cell=new Map(),acc=[];
   for(const o of [...song.onsets].sort((a,b)=>b.s-a.s)){const k=Math.floor(o.t/gap);let ok=true;
    for(let c=k-1;c<=k+1&&ok;c++)for(const t of cell.get(c)||[])if(Math.abs(t-o.t)<gap){ok=false;break}
@@ -725,7 +729,8 @@ async function start(song){
  if(starting)return;starting=true;
  try{ensureCtx();try{await ctx.resume()}catch(e){}
   const D=DIFFS[diffKey],look=D.look/S.spd;let acc,nbuf=null,notes=null,extras=null,beats=[],lead=null;
-  if(song.kind==='audio'){busy('Chargement…',song.title,0);const r=await prepareAudio(song);acc=r.rest;lead=r.lead;beats=song.beats||[]}
+  if(song.kind==='calib'){acc=ctx.createBuffer(2,Math.ceil(ctx.sampleRate*(song.dur+2)),ctx.sampleRate);beats=song.tiles.map(x=>x.t)}
+  else if(song.kind==='audio'){busy('Chargement…',song.title,0);const r=await prepareAudio(song);acc=r.rest;lead=r.lead;beats=song.beats||[]}
   else{const tm=D.tempo*S.tmp,k=song.id+'|'+tm.toFixed(3);let r=cache.get(k);
    if(!r){busy('Préparation du morceau…',song.title,0);const arr=song.kind==='midi'?arrangeMidi(song,tm):arrange(song,tm);
     const b=await renderAudio(arr,p=>busy('Préparation du morceau…',song.title,p));r={...b,arr};remember(k,r)}
@@ -735,8 +740,8 @@ async function start(song){
   stopGame();$('#home').hidden=true;$('#game').hidden=false;$('#ov').hidden=true;resize();
   const bus=ctx.createGain();bus.connect(master);const mg=ctx.createGain();mg.connect(melBus);
   const t0=ctxNow()+look+1,lg=ctx.createGain();lg.connect(melBus);
-  G={song,D,look,...ch,bus,mg,beats,bi:0,lo:0,dlo:0,score:0,combo:0,maxC:0,lives:S.zen?Infinity:D.lives,cnt:[0,0,0,0],live:true,paused:false,pt:0,
-   start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),lg:lead?lg:null,vs:lead?-(ctx.outputLatency||ctx.baseLatency||0):.03,off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};if(G.lg)G.lg.gain.value=1;
+  G={song,D,look,...ch,bus,mg,beats,bi:0,lo:0,dlo:0,score:0,combo:0,maxC:0,lives:S.zen||song.kind==='calib'?Infinity:D.lives,cnt:[0,0,0,0],live:true,paused:false,pt:0,
+   start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),lg:lead?lg:null,vs:lead?-(ctx.outputLatency||ctx.baseLatency||0):song.kind==='calib'?0:S.vis+.02,errs:[],off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};if(G.lg)G.lg.gain.value=1;
   for(const [b,dst] of [[acc,bus],[lead,lg]])if(b){const s=ctx.createBufferSource();s.buffer=b;s.connect(dst);s.start(t0);G.srcs.push(s)}
   hud(true);cancelAnimationFrame(raf);raf=requestAnimationFrame(frame)}
  catch(e){busy();toast((e&&e.message)||'Impossible de lancer ce morceau')}
@@ -759,7 +764,7 @@ function up(id){if(!G)return;const l=G.ids.get(id);if(l!=null){G.press[l]=Math.m
 function arm(x){if(x.armed||!G.nbuf||!x.ns)return;x.armed=true;const tc=ctx.currentTime,g=ctx.createGain();g.gain.value=0;g.connect(G.mg);x.g=g;
  for(const n of x.ns){const b=G.nbuf[n.i];if(!b)continue;const T=G.start+x.t+n.dt,lag=tc-T;if(lag>=b.duration-.05)continue;const s=ctx.createBufferSource();s.buffer=b;s.connect(g);if(lag>0)s.start(tc,lag);else s.start(T)}}
 function cut(x){if(!x.g)return;const tc=ctx.currentTime;try{x.g.gain.cancelScheduledValues(tc);x.g.gain.setTargetAtTime(0,tc,.012)}catch(e){}}
-function hit(x,t,id){const err=Math.abs(t-x.t),w=G.D.win,gr=err<w*.45?0:err<w?1:2;
+function hit(x,t,id){G.errs.push(ctx.currentTime-(G.start+x.t));const err=Math.abs(t-x.t),w=G.D.win,gr=err<w*.45?0:err<w?1:2;
  x.res='hit';x.ht=t;G.lastHit[x.lane]=t;G.cnt[gr]++;G.combo++;G.maxC=Math.max(G.maxC,G.combo);
  G.score+=[300,200,100][gr]*(1+Math.min(G.combo,100)/100);
  G.pops.push({lane:x.lane,t0:t,txt:['Parfait','Super','Bien'][gr],c:gr?'#121014':'#ff5a4e'});
@@ -780,7 +785,7 @@ function update(t){const w=G.D.win,T=G.tiles,{H,ly,pps}=geo(),late=Math.max(w*1.
  for(const x of [...G.holds.keys()])if(t>=x.t+x.hd)endHold(x,t,true);
  $('#prog').style.width=Math.max(0,Math.min(100,t/G.dur*100))+'%';
  if(G.lo>=T.length&&!G.holds.size&&t>Math.max(G.end+1,G.dur)){G.live=false;stopGame();result(true)}}
-function frame(){if(!G)return;raf=requestAnimationFrame(frame);const t=G.paused?G.pt:(G.live?now():(G.failT??now()));if(G.live&&!G.paused)update(t);draw(t)}
+function frame(){if(!G)return;raf=requestAnimationFrame(frame);const t=G.paused?G.pt:(G.live?now():(G.failT??now()));if(G.live&&!G.paused)update(t);if(G)draw(t)}
 function draw(t){const W=cv.width,{H,ly,pps}=geo(),lw=W/4,pad=2*dpr,T=G.tiles;
  while(G.bi<G.beats.length-1&&G.beats[G.bi+1]<=t)G.bi++;const pulse=G.beats.length&&t>=G.beats[G.bi]?Math.exp(-(t-G.beats[G.bi])*6):0;
  cx.fillStyle='#f3efe6';cx.fillRect(0,0,W,H);
@@ -829,7 +834,11 @@ $('#ovc').addEventListener('click',async e=>{const a=e.target.closest('[data-a]'
  if(a.dataset.a==='resume')resume();else if(a.dataset.a==='retry'){try{await ctx.resume()}catch(e){}start(s)}else menu()});
 function menu(){stopGame();try{ctx.resume()}catch(e){}G=null;$('#ov').hidden=true;$('#game').hidden=true;$('#home').hidden=false;if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});render()}
 const starsHTML=n=>'<span class="stars">'+[0,1,2].map(i=>i<n?'★':'<span class="off">★</span>').join('')+'</span>';
-function result(done){if(!G)return;stopGame();const c=G.cnt,tot=G.tiles.length,acc=(c[0]+c[1]*.7+c[2]*.4)/tot,stars=done?(acc>=.93?3:acc>=.8?2:acc>=.55?1:0):0;
+function result(done){if(!G)return;stopGame();
+ if(G.song.kind==='calib'){const e=G.errs.slice(2).sort((a,b)=>a-b),m=e.length?e[e.length>>1]:null;G=null;$('#game').hidden=true;$('#home').hidden=false;
+  if(m==null||e.length<6){toast('Pas assez de taps, recommence');return}S.vis=Math.max(-.05,Math.min(.3,m));store.set('set',S);$('#calO').textContent=Math.round(S.vis*1000)+' ms';toast('Calibré : tes taps arrivent '+Math.round(m*1000)+' ms après le passage');return}
+ /* réglage automatique : si les taps arrivent après le temps de la note, l'image est avancée un peu pour la prochaine partie */
+ if(G.song.kind!=='audio'&&G.errs.length>=20){const e=[...G.errs].sort((a,b)=>a-b),m=e[e.length>>1];if(m>-.01)S.vis=Math.min(.3,S.vis+Math.min(.04,m+.015));else if(m<-.09)S.vis=Math.max(-.05,S.vis+Math.max(-.03,(m+.05)/2));store.set('set',S);$('#calO')&&($('#calO').textContent=Math.round(S.vis*1000)+' ms')}const c=G.cnt,tot=G.tiles.length,acc=(c[0]+c[1]*.7+c[2]*.4)/tot,stars=done?(acc>=.93?3:acc>=.8?2:acc>=.55?1:0):0;
  const key=G.song.id+'|'+diffKey,best=store.get('best',{}),old=best[key]||{s:0,st:0},rec=G.score>old.s;
  const pct=Math.round(Math.min(1,Math.max(0,G.failT??G.end)/Math.max(.01,G.end))*100);
  best[key]={s:Math.max(old.s,Math.round(G.score)),st:Math.max(old.st,stars),p:Math.max(old.p||(old.st?100:0),done?100:pct),d:!!(old.d||old.st||done)};store.set('best',best);
@@ -874,6 +883,8 @@ $('#list').addEventListener('click',async e=>{const d=e.target.closest('[data-de
 function bindSet(id,fmt,key){const el=$('#'+id),o=$('#'+id+'O');el.value=S[key];const sync=()=>{S[key]=+el.value;o.textContent=fmt(S[key]);store.set('set',S)};el.addEventListener('input',sync);sync()}
 bindSet('spd',v=>'×'+v.toFixed(2),'spd');bindSet('tmp',v=>'×'+v.toFixed(2),'tmp');bindSet('off',v=>(v>0?'+':'')+v+' ms','off');
 for(const k of ['vib','zen']){const el=$('#'+k);el.checked=!!S[k];el.addEventListener('change',()=>{S[k]=el.checked;store.set('set',S)})}
+function calibrate(){const tiles=[];for(let k=0;k<16;k++)tiles.push({t:2+k*.75,lane:k%2?2:1});start({id:'calib',kind:'calib',title:'Calibrage',tiles,dur:2+16*.75+1})}
+$('#calB').addEventListener('click',calibrate);$('#calO').textContent=Math.round(S.vis*1000)+' ms';
 renderDiffs();render();
 $('#ver').textContent='v'+VERSION;
 try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});
