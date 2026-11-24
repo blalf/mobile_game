@@ -39,6 +39,10 @@ h2{font-size:22px;margin:30px 0 10px;font-weight:700}
 .btn.primary{background:var(--acc);border-color:var(--acc);color:#1a0b09}
 .btn:focus-visible,.seg button:focus-visible,.song:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .imp{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 12px;margin:0 -16px;padding-inline:16px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
+.chips button{flex:none;min-height:40px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg2);font-weight:600;font-size:14px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.chips button span{color:var(--mute);font-weight:500;font-size:12px}
+.chips button[aria-pressed=true]{background:var(--ivory);color:#121014;border-color:var(--ivory)}.chips button[aria-pressed=true] span{color:#5a554d}
 .list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .song{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;text-align:left;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:var(--bg2);cursor:pointer;min-height:64px}
 .song:active{transform:scale(.99)}
@@ -136,6 +140,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
   <p class="hint">MIDI : chaque tuile joue les vraies notes du morceau. Audio (MP3, M4A, OGG, WAV…) : les tuiles suivent les temps du morceau et la voix ou l'instrument principal ne sonne que si tu enchaînes.</p>
 
   <h2>Morceaux</h2>
+  <div class="chips scroll" id="genres" role="group" aria-label="Genres"></div>
   <ul class="list" id="list"></ul>
 
   <details class="set">
@@ -167,7 +172,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.11.0';
+const VERSION='0.12.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -196,6 +201,23 @@ const STY={
  ballad3:{mel:'piano',dl:2,sl:2,kick:'x...........',snare:'....x...x...',hat:'x.x.x.x.x.x.',bass:'R.......5...',bassI:'subbass',arp:'0.1.2.3.2.1.',arpI:'piano',pad:'strings',pl:1},
  chill68:{mel:'piano',dl:1,sl:2,kick:'x.....x.....',snare:'......x.....',hat:'x.x.x.x.x.x.',bass:'R.....R.....',bassI:'subbass',arp:'0.1.2.3.2.1.',arpI:'epiano',pad:'pad',crackle:true,warm:5000},
  electro:{mel:'lead',dl:1,sl:2,kick:'x...x...x...x...',clap:'....x.......x...',oh:'..x...x...x...x.',hat2:'xxxxxxxxxxxxxxxx',bass:'..R...R...R...R.',bassI:'bass',arp:'0123401234012340',arpI:'pluck',al:1,pad:'pad'},
+ rock:{mel:'lead',dl:1,sl:1,kick:'x.....x.x.......',snare:'....x.......x...',hat:'x.x.x.x.x.x.x.x.',crash:'x...............',bass:'R.R.R.R.R.R.R.R.',bassI:'bass',keys:'x.x.x.x.x.x.x.x.',keysI:'dist',power:true,kd:.85,kv:.55},
+ funk:{mel:'brass',dl:1,sl:1,kick:'x..x..x...x..x..',snare:'....x..x.x..x...',hat:'x.x.x.x.x.x.x.x.',hat2:'.x.x.x.x.x.x.x.x',bass:'R..O..R.5..3R.7.',bassI:'bass',bd:.6,keys:'..x..x....x..x..',keysI:'pluck',kd:.4,kv:.35},
+ reggae:{mel:'epiano',dl:1,sl:1,kick:'........x.......',rim:'........x.......',hat:'..x...x...x...x.',bass:'R...R.5.R...3.5.',bassI:'subbass',bd:.8,keys:'..x...x...x...x.',keysI:'guitar',strum:.008,kd:.35,kv:.5,pad:'organ',pl:1},
+ bossa:{mel:'flute',dl:1,sl:9,kick:'x..x....x..x....',rim:'..x..x...x..x...',shaker:'x.xxx.xxx.xxx.xx',bass:'R.....5.R.....5.',bassI:'subbass',keys:'x..x..x...x..x..',keysI:'guitar',strum:.012,kd:.6,kv:.42},
+ jazz:{mel:'brass',dl:1,sl:9,swing8:.66,ride:'x...x.x.x...x.x.',hat:'....x.......x...',bass:'R...3...5...6...',bassI:'subbass',bd:.9,keys:'......x.....x...',keysI:'piano',kd:.5,kv:.34},
+ ambient:{mel:'musicbox',dl:9,sl:9,bass:'R...............',bassI:'subbass',bl:1,arp:'0.......2.......',arpI:'harp',arpO:12,av:.35,pad:'pad'},
+ trap:{mel:'musicbox',dl:1,sl:1,kick:'x......x..x.....',clap:'........x.......',hat:'x.x.x.x.x.x.x.x.',hat2:'..xx......xxx.xx',bass:'R......R..R.....',bassI:'sub808',bd:1.5,pad:'pad'},
+ chip:{mel:'chip',dl:1,sl:1,kick:'x.......x.......',snare:'....x.......x...',hat:'x.x.x.x.x.x.x.x.',bass:'R.O.R.O.R.O.R.O.',bassI:'chipbass',arp:'0123012301230123',arpI:'chip',arpO:12,av:.22,al:1},
+ folk:{mel:'flute',dl:1,sl:1,kick:'x.......x.......',rim:'....x.......x...',shaker:'x.x.x.x.x.x.x.x.',bass:'R.......5.......',bassI:'subbass',keys:'x..x..x.x..x..x.',keysI:'guitar',strum:.01,kd:.5,kv:.4},
+ gospel3:{mel:'piano',dl:2,sl:2,kick:'x...........',snare:'....x...x...',hat:'x.x.x.x.x.x.',bass:'R.......5...',bassI:'subbass',keys:'x...........',keysI:'organ',kv:.45,arp:'0.1.2.3.2.1.',arpI:'piano',av:.32},
+ tango:{mel:'flute',dl:1,sl:9,kick:'x..x....x..x....',rim:'....x.......x...',bass:'R..5R.5.R..5R.5.',bassI:'subbass',bd:.7,keys:'x...x...x...x...',keysI:'guitar',kd:.3,kv:.4,pad:'strings',pl:1},
+ mariachi:{mel:'brass',dl:1,sl:1,kick:'x.......x.......',snare:'....x.......x...',snareI:'rim',bass:'R.......5.......',bassI:'subbass',keys:'....x.x.....x.x.',keysI:'guitar',strum:.01,kd:.5,kv:.45},
+ orch3:{mel:'flute',dl:9,sl:9,bass:'R...........',bassI:'subbass',bl:1,arp:'0.1.2.3.2.1.',arpI:'harp',arpO:0,av:.4,pad:'strings'},
+ fete3:{mel:'musicbox',dl:1,sl:9,shaker:'x...x...x...',kick:'x...........',bass:'R.......5...',bassI:'subbass',keys:'....x...x...',keysI:'piano',kd:.6,kv:.35,pad:'strings',pl:1},
+ japan:{mel:'guitar',dl:9,sl:9,arp:'0.......1.......',arpI:'harp',av:.3,pad:'pad'},
+ disco:{mel:'brass',dl:1,sl:1,kick:'x...x...x...x...',clap:'....x.......x...',oh:'..x...x...x...x.',hat2:'xxxxxxxxxxxxxxxx',bass:'R.O.R.O.R.O.R.O.',bassI:'bass',bd:.7,keys:'..x...x...x...x.',keysI:'pluck',kd:.4,kv:.3,pad:'strings',pl:1},
+ boombap:{mel:'piano',dl:1,sl:1,swing:.58,kick:'x.....x...x.....',snare:'....x.......x...',hat:'x.x.x.x.x.x.x.x.',bass:'R.....R...R.....',bassI:'subbass',keys:'x.......x.......',keysI:'epiano',kd:.9,crackle:true,warm:4500},
  synthwave:{mel:'lead',dl:1,sl:1,kick:'x...x...x...x...',snare:'....x.......x...',hat:'x.x.x.x.x.x.x.x.',bass:'RORORORORORORORO',bassI:'bass',arp:'0123012301230123',arpI:'pluck',al:1,pad:'pad'}
 };
 
@@ -236,36 +258,115 @@ const MI_A='F5:1 A5:.5 F5 E5:1 D5:1 B4:1.5 D5:.5 F5:1 G5:1 E5:2 B4:1 C5:1 C#5:1 
 const MI_B='A5:1.5 G5:.5 E5:1 C5:1 D5:1.5 E5:.5 G5:2 F5:1 E5:.5 D5 C5:1 A4:1 B4:2 D5:1 F5:1 E5:1 F5:1 A5:1 C6:1 B5:1.5 A5:.5 G5:1 E5:1 F5:1 A5:1 D5:1 F5:1 G5:3 R:1',MI_BC='Fmaj7:4 Em7:4 Dm7:4 G7:4 Fmaj7:4 Em7:4 Dm7:4 G7:4';
 const VA_A='C5:.5 C5 Ab5:1 G5:.5 F5 C5:1 Db5:.5 F5 Ab5:1 F5:1 Eb5:1 C5:.5 Eb5 Ab5:1 G5:.5 Ab5 C6:1 Bb5:2 G5:1 Eb5:1 C5:.5 C5 Ab5:1 G5:.5 F5 Ab5:1 F5:.5 Ab5 Db6:1 C6:1 Ab5:1 Eb5:.5 Ab5 C6:1 Bb5:.5 Ab5 G5:1 Bb5:3 R:1',VA_AC='Fm:4 Db:4 Ab:4 Eb:4 Fm:4 Db:4 Ab:4 Eb:4';
 const VA_B='F5:.5 Ab5 C6 Ab5 F5 Ab5 C6 Ab5 F5 Ab5 Db6 Ab5 F5 Ab5 Db6 F6 Eb6:1 C6 Ab5 C6 Bb5 G5 Eb5 G5 F5:.5 Ab5 C6 Ab5 F5 Ab5 C6 Ab5 F5 Ab5 Db6 Ab5 F5 Ab5 Db6 F6 Eb6:1.5 Db6:.5 C6:1 Ab5:1 G5:2 Bb5:2',VA_BC=VA_AC;
+const KO_A='E5:1 B4:.5 C5:.5 D5:1 C5:.5 B4:.5 A4:1 A4:.5 C5:.5 E5:1 D5:.5 C5:.5 B4:1.5 C5:.5 D5:1 E5:1 C5:1 A4:1 A4:2',KO_AC='Am:4 Am:4 E:4 Am:4';
+const KO_B='R:.5 D5:1 F5:.5 A5:1 G5:.5 F5:.5 E5:1.5 C5:.5 E5:1 D5:.5 C5:.5 B4:1 B4:.5 C5:.5 D5:1 E5:1 C5:1 A4:1 A4:2',KO_BC='Dm:4 C:4 E:4 Am:4';
+const SN='G4:1.5 A4:.5 G4:1 E4:3 G4:1.5 A4:.5 G4:1 E4:3 D5:2 D5:1 B4:3 C5:2 C5:1 G4:3 A4:2 A4:1 C5:1.5 B4:.5 A4:1 G4:1.5 A4:.5 G4:1 E4:3 A4:2 A4:1 C5:1.5 B4:.5 A4:1 G4:1.5 A4:.5 G4:1 E4:3 D5:2 D5:1 F5:1.5 D5:.5 B4:1 C5:3 E5:3 C5:1 G4:1 E4:1 G4:1.5 F4:.5 D4:1 C4:6',SNC='C:12 G7:6 C:6 F:6 C:6 F:6 C:6 G7:6 C:6 C:3 G7:3 C:6';
+const WW='G4:1 G4:.5 A4:.5 G4:.5 F#4:.5 E4:1 E4:1 E4:1 A4:1 A4:.5 B4:.5 A4:.5 G4:.5 F#4:1 D4:1 D4:1 B4:1 B4:.5 C5:.5 B4:.5 A4:.5 G4:1 E4:1 D4:.5 D4:.5 E4:1 A4:1 F#4:1 G4:2 D4:1',WWC='G:3 C:3 A7:3 D:3 Em:3 C:3 C:1 D:2 G:3';
+const CU='C4:.5 C4 C4 F4:1.5 A4:1 C4:.5 C4 C4 F4:1.5 A4:1 F4:.5 F4 E4 E4 D4 D4 C4:1 C4:.5 C4 C4 E4:1.5 G4:1 C4:.5 C4 C4 E4:1.5 G4:1 C5:.5 D5 C5 Bb4 A4 G4 F4:1',CUC='F:4 F:4 C7:4 C7:4 C7:4 F:4';
+const SK='A4:1 A4 B4:2 A4:1 A4 B4:2 A4:1 B4 C5 B4 A4 B4:.5 A4:.5 F4:2 E4:1 C4 E4 F4 E4 E4:.5 C4:.5 B3:2',SKC='Am:4 Am:4 Am:4 F:4 Am:4 Em:4';
+const DS='A4:1 A4:.5 A4:.5 A4:1 A4:.5 A4:.5 A4:1 D4:1 F4:1 A4:1 G4:1 G4:.5 G4:.5 G4:1 G4:.5 G4:.5 G4:1 C4:1 E4:1 G4:1 A4:1 A4:.5 A4:.5 A4:1 A4:.5 A4:.5 A4:1 B4:1 C5:1 D5:1 C5:1 A4:1 G4:1 E4:1 D4:2 D4:2',DSC='Dm:8 C:8 Dm:8 C:4 Dm:4';
+const AG='C5:2 E5:.5 C5:.5 E5:2 D5:1 C5:2 A4:1 G4:2 G4:1 C5:2 E5:.5 C5:.5 E5:2 D5:1 G5:3 G5:2 E5:1 G5:1.5 E5:.5 C5:1 E5:2 D5:1 C5:2 A4:1 G4:2 G4:1 C5:2 E5:.5 C5:.5 E5:2 D5:1 C5:3 R:2 G4:1',AGC='C:3 C:3 F:3 C:3 C:3 G:3 G:3 C:3 C:3 G:3 F:3 C:3 C:3 G:3 C:3 C:3';
+const HB='D5:.75 C#5:.25 C5:.5 C5:.5 B4:.75 Bb4:.25 A4:.5 Ab4:.5 G4:.75 F4:.25 F4:.5 E4:.5 F4:.5 G4:.5 F4:.5 E4:.5 D5:.75 C#5:.25 C5:.5 C5:.5 B4:.75 Bb4:.25 A4:.5 Ab4:.5 G4:.75 F4:.25 F4:.5 E4:.5 D4:2',HBC='Dm:2 Gm:2 A7:2 Dm:2 Dm:2 Gm:2 A7:2 Dm:2';
+const AS_A='E5:1 G5:1 B5:1.5 A5:.5 G5:1 E5:1 C5:2 D5:1 G5:1 B5:1 D6:1 C6:1.5 B5:.5 A5:2 E5:1 G5:1 B5:1.5 A5:.5 G5:1 E5:1 G5:1 C6:1 B5:1 A5:.5 G5:.5 D5:1 G5:1 F#5:3 R:1',AS_AC='Em:4 C:4 G:4 D:4 Em:4 C:4 G:4 D:4';
+const AS_B='E5:.5 G5 C6 B5 C6:1 G5:1 F#5:.5 A5 D6:1 A5:1 F#5:1 G5:1 B5:1 E6:2 D6:1 B5:1 G5:1 E5:1 E5:.5 G5 C6 B5 C6:1 E6:1 D6:1.5 C6:.5 A5:1 F#5:1 G5:1 B5:1 E5:1 G5:1 E5:3 R:1',AS_BC='C:4 D:4 Em:4 Em:4 C:4 D:4 Em:4 Em:4';
+const GR_A='R:.5 E5:.25 G5:.25 A5:.5 B5:.5 R:.5 A5:.5 G5:.5 E5:.5 G5:.5 A5:.5 R:.5 C#6:.5 E6:1 C#6:.5 A5:.5 R:.5 E5:.25 G5:.25 A5:.5 B5:.5 D6:1 B5:1 A5:.5 G5:.5 E5:.5 G5:.5 A5:2 R:.5 E5:.25 G5:.25 A5:.5 B5:.5 R:.5 A5:.5 G5:.5 E5:.5 G5:.5 A5:.5 R:.5 C#6:.5 E6:1 C#6:.5 A5:.5 B5:.5 D6:.5 E6:1 D6:.5 B5:.5 A5:1 G5:.5 A5:.5 E5:1 R:2',GR_AC='Em7:4 A7:4 Em7:4 A7:4 Em7:4 A7:4 Em7:4 A7:4';
+const GR_B='E6:1 D6:.5 B5:.5 G5:1 E5:1 D#6:1 B5:.5 A5:.5 F#5:1 D#5:1 E5:.5 G5:.5 B5:.5 D6:.5 E6:2 D6:.5 B5:.5 G5:1 R:2 G5:.5 B5:.5 E6:1 D6:.5 C6:.5 B5:1 A5:.5 B5:.5 D#6:1 F#6:1 D#6:1 E6:1 B5:1 G5:1 D6:1 E6:3 R:1',GR_BC='Cmaj7:4 B7:4 Em7:4 Em7:4 Cmaj7:4 B7:4 Em7:4 Em7:4';
+const SO_A='E5:1 G5:1 E5:.5 D5:.5 C5:1 A4:1 C5:1 F5:2 D5:1 G5:1 B5:.5 A5:.5 G5:1 A5:2 F5:1 C5:1 E5:1 G5:1 C6:1.5 B5:.5 A5:1 F5:1 A5:1 C6:1 B5:1 A5:.5 G5:.5 D5:2 C5:3 R:1',SO_AC='C:4 F:4 G:4 F:4 C:4 F:4 G:4 F:4';
+const SO_B='C6:1.5 B5:.5 A5:1 E5:1 F5:1 A5:1 C6:2 G5:1 E5:1 C5:1 E5:1 D5:2 G5:2 A5:1 C6:1 E6:1.5 D6:.5 C6:1 A5:1 F5:2 E5:1 G5:1 C6:1 E5:1 D5:3 R:1',SO_BC='Am:4 F:4 C:4 G:4 Am:4 F:4 C:4 G:4';
+const BO_A='A5:1.5 F5:.5 E5:1 D5:1 B4:1 D5:1 F5:1 G5:1 E5:2 G5:1.5 B5:.5 B5:3 R:1 G5:1.5 E5:.5 D5:1 B4:1 C#5:1 E5:1 G5:1 A5:1 F5:1.5 E5:.5 D5:1 C5:1 B4:2 D5:1 F5:1',BO_AC='Dm7:4 G7:4 Cmaj7:4 Cmaj7:4 Em7:4 A7:4 Dm7:4 G7:4';
+const BO_B='A5:1 C6:1 E6:1.5 C6:.5 Ab5:1 C6:1 Eb6:2 D6:1 B5:1 G5:1.5 E5:.5 G5:1 E5:1 C#5:2 D5:1 F5:1 A5:1 C6:1 B5:1.5 A5:.5 G5:1 F5:1 E5:2 G5:1 B5:1 C6:3 R:1',BO_BC='Fmaj7:4 Fm7:4 Em7:4 A7:4 Dm7:4 G7:4 Cmaj7:4 Cmaj7:4';
+const CF_A='F5:.5 A5:.5 C6:1 A5:.5 F5:.5 D5:1 B4:.5 D5:.5 F5:.5 A5:.5 G5:2 E5:1 G5:.5 B5:.5 A5:1 G5:1 C#6:1.5 A5:.5 E5:1 G5:1 A5:.5 C6:.5 D6:1 C6:.5 A5:.5 F5:1 G5:.5 F5:.5 D5:.5 B4:.5 D5:2 E5:1.5 D5:.5 C5:1 E5:1 E5:3 R:1',CF_AC='Dm7:4 G7:4 Cmaj7:4 A7:4 Dm7:4 G7:4 Cmaj7:4 A7:4';
+const CF_B='C6:1 A5:1 E6:1.5 C6:.5 D6:1 Bb5:1 Ab5:1 F5:1 G5:1 B5:1 D6:1 B5:1 C#6:1 A5:1 G5:1 E5:1 F5:1 A5:1 C6:1 A5:1 B5:.5 A5:.5 G5:.5 F5:.5 D5:2 E5:1 G5:1 B5:1 G5:1 C6:3 R:1',CF_BC='Fmaj7:4 Bb7:4 Em7:4 A7:4 Dm7:4 G7:4 Cmaj7:4 Cmaj7:4';
+const AU_A='E5:2 G5:2 B5:4 A5:2 C6:2 E5:4 F5:2 A5:2 C6:4 B5:2 D6:2 G5:4',AU_B='G5:1 E5:1 C6:2 B5:4 C6:1 A5:1 E6:2 C6:4 A5:1 F5:1 C6:2 E6:4 D6:2 B5:2 G5:4',AU_C='Cmaj7:8 Am7:8 Fmaj7:8 G:8';
+const NT_A='E5:.5 E5:.5 C5:.5 A4:.5 R:1 E5:.5 C5:.5 F5:.5 F5:.5 C5:.5 A4:.5 R:2 D5:.5 F5:.5 A5:1 F5:.5 D5:.5 A4:1 G#4:1 B4:1 E5:2 E5:.5 E5:.5 C5:.5 A4:.5 R:1 E5:.5 C5:.5 A5:.5 F5:.5 C5:1 F5:1 A5:1 F5:1 E5:.5 D5:.5 A4:2 B4:.5 G#4:.5 E4:3',NT_AC='Am:4 F:4 Dm:4 E:4 Am:4 F:4 Dm:4 E:4';
+const LIB2=[
+ {id:'tetris',title:'Korobeïniki',by:'Traditionnel russe · 8-bit',genre:'Rétro',style:'chip',bpm:150,tr:0,sec:[
+  {mel:'R:16',ch:'Am:4 E:4 Am:4 E:4',lvl:0},{mel:KO_A,ch:KO_AC,lvl:1},{mel:KO_A,ch:KO_AC,lvl:1},{mel:KO_B,ch:KO_BC,lvl:2},{mel:KO_A,ch:KO_AC,lvl:2},{mel:KO_B,ch:KO_BC,lvl:2},{mel:KO_A,ch:KO_AC,lvl:2},{mel:'A4:4',ch:'Am:4',lvl:0}]},
+ {id:'douce',title:'Douce nuit',by:'Gruber · harpe et cordes',genre:'Fêtes',style:'orch3',pb:3,bpm:96,tr:0,sec:[{mel:'R:6',ch:'C:3 G7:3',lvl:0},{mel:SN,ch:SNC,lvl:1},{mel:SN,ch:SNC,lvl:2}]},
+ {id:'wewish',title:'We Wish You a Merry Christmas',by:'Traditionnel anglais · boîte à musique',genre:'Fêtes',style:'fete3',pb:3,bpm:150,tr:12,sec:[
+  {mel:'R:2 D4:1',ch:'D:3',lvl:0},{mel:WW,ch:WWC,lvl:1},{mel:WW,ch:WWC,lvl:1},{mel:WW,ch:WWC,lvl:2},{mel:WW,ch:WWC,lvl:2},{mel:'G4:3',ch:'G:3',lvl:0}]},
+ {id:'cucaracha',title:'La Cucaracha',by:'Traditionnel mexicain · mariachi',genre:'Monde',style:'mariachi',bpm:168,tr:12,sec:[
+  {mel:'R:8',ch:'F:4 C7:4',lvl:0},{mel:CU,ch:CUC,lvl:1},{mel:CU,ch:CUC,lvl:1},{mel:CU,ch:CUC,lvl:2},{mel:CU,ch:CUC,lvl:2},{mel:'F4:4',ch:'F:4',lvl:0}]},
+ {id:'sakura',title:'Sakura Sakura',by:'Traditionnel japonais · koto',genre:'Monde',style:'japan',bpm:72,tr:0,sec:[
+  {mel:'R:8',ch:'Am:8',lvl:0},{mel:SK,ch:SKC,lvl:1},{mel:SK,ch:SKC,lvl:1,tr:12},{mel:SK,ch:SKC,lvl:2},{mel:'A4:4',ch:'Am:4',lvl:0}]},
+ {id:'sailor',title:'Drunken Sailor',by:'Chant de marins · folk',genre:'Monde',style:'folk',bpm:132,tr:12,sec:[
+  {mel:'R:8',ch:'Dm:4 C:4',lvl:0},{mel:DS,ch:DSC,lvl:1},{mel:DS,ch:DSC,lvl:1},{mel:DS,ch:DSC,lvl:2},{mel:DS,ch:DSC,lvl:2},{mel:'D4:4',ch:'Dm:4',lvl:0}]},
+ {id:'grace',title:'Amazing Grace',by:'Newton · gospel',genre:'Classique',style:'gospel3',pb:3,bpm:84,tr:0,sec:[
+  {mel:'R:2 G4:1',ch:'C:3',lvl:0},{mel:AG,ch:AGC,lvl:0},{mel:AG,ch:AGC,lvl:1},{mel:AG,ch:AGC,lvl:2},{mel:'C5:6',ch:'C:6',lvl:0}]},
+ {id:'habanera',title:'Habanera',by:'Bizet · tango',genre:'Classique',style:'tango',bpm:76,tr:0,sec:[
+  {mel:'R:8',ch:'Dm:4 A7:4',lvl:0},{mel:HB,ch:HBC,lvl:1},{mel:HB,ch:HBC,lvl:1},{mel:HB,ch:HBC,lvl:2,tr:12},{mel:HB,ch:HBC,lvl:2},{mel:'D5:4',ch:'Dm:4',lvl:0}]},
+ {id:'asphalte',title:'Asphalte',by:'Composition originale · rock',genre:'Rock',style:'rock',bpm:128,tr:0,sec:[
+  {mel:'R:16',ch:'Em:4 C:4 G:4 D:4',lvl:0},{mel:AS_A,ch:AS_AC,lvl:1},{mel:AS_B,ch:AS_BC,lvl:2},{mel:AS_A,ch:AS_AC,lvl:2},{mel:AS_B,ch:AS_BC,lvl:2},{mel:'E5:4',ch:'Em:4',lvl:0}]},
+ {id:'groove',title:'Groove 404',by:'Composition originale · funk',genre:'Funk',style:'funk',bpm:104,tr:0,sec:[
+  {mel:'R:16',ch:'Em7:4 A7:4 Em7:4 A7:4',lvl:0},{mel:GR_A,ch:GR_AC,lvl:1},{mel:GR_B,ch:GR_BC,lvl:2},{mel:GR_A,ch:GR_AC,lvl:2},{mel:GR_B,ch:GR_BC,lvl:2},{mel:'E5:4',ch:'Em7:4',lvl:0}]},
+ {id:'soleil',title:'Soleil lent',by:'Composition originale · reggae',genre:'Monde',style:'reggae',bpm:76,tr:0,sec:[
+  {mel:'R:16',ch:'C:4 F:4 G:4 F:4',lvl:0},{mel:SO_A,ch:SO_AC,lvl:1},{mel:SO_B,ch:SO_BC,lvl:2},{mel:SO_A,ch:SO_AC,lvl:2},{mel:'C5:4',ch:'C:4',lvl:0}]},
+ {id:'plage',title:'Plage',by:'Composition originale · bossa nova',genre:'Jazz',style:'bossa',bpm:132,tr:0,sec:[
+  {mel:'R:16',ch:'Dm7:4 G7:4 Cmaj7:8',lvl:0},{mel:BO_A,ch:BO_AC,lvl:1},{mel:BO_B,ch:BO_BC,lvl:1},{mel:BO_A,ch:BO_AC,lvl:2},{mel:BO_B,ch:BO_BC,lvl:2},{mel:'C5:4',ch:'Cmaj7:4',lvl:0}]},
+ {id:'cafe',title:'Café noir',by:'Composition originale · jazz swing',genre:'Jazz',style:'jazz',bpm:126,tr:0,sec:[
+  {mel:'R:16',ch:'Dm7:4 G7:4 Cmaj7:4 A7:4',lvl:0},{mel:CF_A,ch:CF_AC,lvl:1},{mel:CF_B,ch:CF_BC,lvl:1},{mel:CF_A,ch:CF_AC,lvl:2},{mel:CF_B,ch:CF_BC,lvl:2},{mel:'C5:4',ch:'Cmaj7:4',lvl:0}]},
+ {id:'aurore',title:'Aurore',by:'Composition originale · ambient',genre:'Ambiance',style:'ambient',bpm:68,tr:0,sec:[
+  {mel:'R:16',ch:'Cmaj7:8 Am7:8',lvl:0},{mel:AU_A,ch:AU_C,lvl:1},{mel:AU_B,ch:AU_C,lvl:1},{mel:AU_A,ch:AU_C,lvl:2},{mel:AU_B,ch:AU_C,lvl:2},{mel:'C5:8',ch:'Cmaj7:8',lvl:0}]},
+ {id:'neant',title:'Néant',by:'Composition originale · trap',genre:'Hip-hop',style:'trap',bpm:140,tr:0,sec:[
+  {mel:'R:16',ch:'Am:4 F:4 Dm:4 E:4',lvl:0},{mel:NT_A,ch:NT_AC,lvl:1},{mel:NT_A,ch:NT_AC,lvl:2},{mel:NT_A,ch:NT_AC,lvl:2,tr:12},{mel:NT_A,ch:NT_AC,lvl:2},{mel:'A4:4',ch:'Am:4',lvl:0}]}
+];
+const ET_A='B4:1 D5:.5 B4:.5 G4:1 D5:1 A4:1.5 F#4:.5 D5:2 E5:1 G5:.5 E5:.5 B4:1 G5:1 E5:2 C5:1 G4:1 B4:.5 D5 G5:1 B5:1 G5:1 F#5:1 A5:1 D5:2 G5:1 E5:.5 G5:.5 B5:1 E5:1 G5:3 R:1',ET_AC='G:4 D:4 Em:4 C:4 G:4 D:4 Em:4 C:4';
+const ET_B='E5:1 G5:1 C6:1.5 B5:.5 B5:1 D6:1 G5:2 A5:1.5 F#5:.5 D5:1 A5:1 G5:2 E5:2 C6:1 B5:.5 G5:.5 E5:1 G5:1 D6:1.5 B5:.5 G5:1 B5:1 A5:1 F#5:1 D6:2 D6:3 R:1',ET_BC='C:4 G:4 D:4 Em:4 C:4 G:4 D:4 D:4';
+const L7_A='A4:.5 C5 E5:1 C5:1 A4:1 C5:.5 F5 A5:1 G5:1 F5:1 E5:1.5 D5:.5 C5:1 G4:1 B4:1 D5:1 G5:2 E5:.5 E5 A5:1 G5:1 E5:1 F5:1 A5:1 C6:1 A5:1 G5:1.5 E5:.5 C5:1 E5:1 D5:3 R:1',L7_AC='Am:4 F:4 C:4 G:4 Am:4 F:4 C:4 G:4';
+const L7_B='A5:1.5 G5:.5 F5:1 C5:1 D5:1 G5:1 B5:2 B5:1 G5:.5 E5:.5 B4:1 E5:1 C6:2 A5:2 F5:1 A5:1 C6:1.5 A5:.5 B5:1 D6:1 B5:1 G5:1 E5:1 G5:1 B5:1 G5:1 A5:3 R:1',L7_BC='F:4 G:4 Em:4 Am:4 F:4 G:4 Em:4 Am:4';
+const RF_A='D5:.5 F5 A5:1 F5:.5 D5:.5 A4:1 Bb4:1 D5:1 F5:1.5 D5:.5 C5:.5 E5 G5:1 E5:.5 C5:.5 G4:1 A4:1 C#5:1 E5:2 F5:1 A5:1 D6:1.5 C6:.5 Bb5:1 F5:1 D5:2 E5:1 G5:1 C6:1 G5:1 A5:3 R:1',RF_AC='Dm:4 Bb:4 C:4 A:4 Dm:4 Bb:4 C:4 A:4';
+const RF_B='D6:1 C6:.5 Bb5:.5 F5:2 E5:1 G5:1 C6:2 A5:1 F5:1 D5:1 F5:1 A5:3 R:1 F5:.5 Bb5 D6:1 Bb5:1 F5:1 G5:.5 C6 E6:1 C6:1 G5:1 F5:1 A5:1 D6:1 A5:1 D6:3 R:1',RF_BC='Bb:4 C:4 Dm:4 Dm:4 Bb:4 C:4 Dm:4 Dm:4';
+const PA_A='A5:.5 C6 E6:1 D6:.5 C6:.5 A5:1 F#5:.5 A5 C6:1 A5:1 F#5:1 G5:1 B5:1 D6:1.5 B5:.5 E6:2 C6:1 G5:1 A5:.5 C6 E6:1 G6:1 E6:1 D6:1 C6:.5 A5:.5 F#5:2 B5:1 D6:1 F#6:1 D6:1 E6:3 R:1',PA_AC='Am7:4 D7:4 Gmaj7:4 Cmaj7:4 Am7:4 D7:4 Gmaj7:4 Cmaj7:4';
+const PA_B='A5:1 C6:1 E6:2 D6:1 B5:1 G#5:2 A5:1 C6:1 E6:1 G6:1 E6:3 R:1 F6:1 E6:1 C6:1 A5:1 G#5:1 B5:1 D6:1 E6:1 C6:1.5 A5:.5 E6:2 A5:3 R:1',PA_BC='Fmaj7:4 E7:4 Am7:4 Am7:4 Fmaj7:4 E7:4 Am7:4 Am7:4';
+const BI_A='E5:1 C5:.5 A4:.5 G5:1 E5:1 F5:1.5 D5:.5 A4:1 C5:1 A4:.5 C5 E5:1 G5:1.5 E5:.5 G#5:1 E5:1 D5:1 B4:1 C5:1 E5:1 A5:1.5 G5:.5 F5:1 A5:1 C6:1 A5:1 G5:1 E5:.5 C5:.5 A4:2 B4:3 R:1',BI_AC='Am7:4 Dm7:4 Am7:4 E7:4 Am7:4 Dm7:4 Am7:4 E7:4';
+const BR_A='F5:2 A5:2 C6:4 D6:2 A5:2 F5:4 E5:2 A5:2 C6:4 G5:2 E5:2 C5:4',BR_B='A5:1 C6:1 D6:2 F6:4 D6:1 Bb5:1 F5:2 A5:4 C6:1 A5:1 E5:2 F5:4 E5:1 G5:1 C6:2 G5:4',BR_C='Dm7:8 Bbmaj7:8 Fmaj7:8 C:8';
+const PX_A='C5:.5 E5 G5 C6 G5 E5 C5:1 A4:.5 C5 E5 A5 E5 C5 A4:1 F5:.5 A5 C6:1 A5:.5 F5:.5 C5:1 D5:.5 G5 B5:1 D6:2 E6:1 C6:.5 G5:.5 E5:1 G5:1 A5:1 E5:.5 C5:.5 A4:1 C5:1 F5:.5 G5 A5 C6 A5 G5 F5:1 G5:3 R:1',PX_AC='C:4 Am:4 F:4 G:4 C:4 Am:4 F:4 G:4';
+const LIB3=[
+ {id:'ete99',title:'Été 99',by:'Composition originale · pop',genre:'Pop',style:'pop',bpm:112,tr:0,sec:[
+  {mel:'R:16',ch:'G:4 D:4 Em:4 C:4',lvl:0},{mel:ET_A,ch:ET_AC,lvl:1},{mel:ET_B,ch:ET_BC,lvl:2},{mel:ET_A,ch:ET_AC,lvl:1},{mel:ET_B,ch:ET_BC,lvl:2},{mel:'G5:4',ch:'G:4',lvl:0}]},
+ {id:'ligne7',title:'Ligne 7',by:'Composition originale · pop piano',genre:'Pop',style:'pianopop',bpm:96,tr:0,sec:[
+  {mel:'R:16',ch:'Am:4 F:4 C:4 G:4',lvl:0},{mel:L7_A,ch:L7_AC,lvl:1},{mel:L7_B,ch:L7_BC,lvl:1},{mel:L7_A,ch:L7_AC,lvl:2},{mel:L7_B,ch:L7_BC,lvl:2},{mel:'A4:4',ch:'Am:4',lvl:0}]},
+ {id:'riff',title:'Riff',by:'Composition originale · rock',genre:'Rock',style:'rock',bpm:140,tr:0,sec:[
+  {mel:'R:16',ch:'Dm:4 Bb:4 C:4 A:4',lvl:0},{mel:RF_A,ch:RF_AC,lvl:1},{mel:RF_B,ch:RF_BC,lvl:2},{mel:RF_A,ch:RF_AC,lvl:2},{mel:RF_B,ch:RF_BC,lvl:2},{mel:'D5:4',ch:'Dm:4',lvl:0}]},
+ {id:'paillettes',title:'Paillettes',by:'Composition originale · disco',genre:'Funk',style:'disco',bpm:120,tr:0,sec:[
+  {mel:'R:16',ch:'Am7:4 D7:4 Gmaj7:4 Cmaj7:4',lvl:0},{mel:PA_A,ch:PA_AC,lvl:1},{mel:PA_B,ch:PA_BC,lvl:2},{mel:PA_A,ch:PA_AC,lvl:2},{mel:PA_B,ch:PA_BC,lvl:2},{mel:'A5:4',ch:'Am7:4',lvl:0}]},
+ {id:'bitume',title:'Bitume',by:'Composition originale · boom bap',genre:'Hip-hop',style:'boombap',bpm:88,tr:0,sec:[
+  {mel:'R:16',ch:'Am7:4 Dm7:4 Am7:4 E7:4',lvl:0},{mel:BI_A,ch:BI_AC,lvl:1},{mel:BI_A,ch:BI_AC,lvl:2},{mel:BI_A,ch:BI_AC,lvl:2,tr:12},{mel:'A4:4',ch:'Am7:4',lvl:0}]},
+ {id:'brume',title:'Brume',by:'Composition originale · ambient',genre:'Ambiance',style:'ambient',bpm:62,tr:0,sec:[
+  {mel:'R:16',ch:'Dm7:8 Bbmaj7:8',lvl:0},{mel:BR_A,ch:BR_C,lvl:1},{mel:BR_B,ch:BR_C,lvl:1},{mel:BR_A,ch:BR_C,lvl:2},{mel:BR_B,ch:BR_C,lvl:2},{mel:'D5:8',ch:'Dm7:8',lvl:0}]},
+ {id:'pixel',title:'Pixel',by:'Composition originale · 8-bit',genre:'Rétro',style:'chip',bpm:160,tr:0,sec:[
+  {mel:'R:16',ch:'C:4 Am:4 F:4 G:4',lvl:0},{mel:PX_A,ch:PX_AC,lvl:1},{mel:PX_A,ch:PX_AC,lvl:2},{mel:PX_A,ch:PX_AC,lvl:2,tr:12},{mel:PX_A,ch:PX_AC,lvl:2},{mel:'C5:4',ch:'C:4',lvl:0}]}
+];
 const LIB=[
- {id:'clair',title:'Au clair de la lune',by:'Traditionnel · lo-fi',style:'lofi',bpm:80,tr:12,sec:[
+ {id:'clair',genre:'Lo-fi',title:'Au clair de la lune',by:'Traditionnel · lo-fi',style:'lofi',bpm:80,tr:12,sec:[
   {mel:'R:16',ch:'Cmaj7:4 Am7:4 Dm7:4 G7:4',lvl:0},{mel:CL_A,ch:CL_AC,lvl:1},{mel:CL_A,ch:CL_AC,lvl:1},{mel:CL_B,ch:CL_BC,lvl:2},{mel:CL_A,ch:CL_AC,lvl:2},{mel:CL_B,ch:CL_BC,lvl:2},{mel:CL_A,ch:CL_AC,lvl:2},{mel:'C4:8',ch:'Cmaj7:8',lvl:0}]},
- {id:'pluie',title:'Pluie de juin',by:'Composition originale · lo-fi',style:'lofi',bpm:82,tr:0,sec:[
+ {id:'pluie',genre:'Lo-fi',title:'Pluie de juin',by:'Composition originale · lo-fi',style:'lofi',bpm:82,tr:0,sec:[
   {mel:'R:16',ch:'Fmaj7:4 Em7:4 Dm7:4 Cmaj7:4',lvl:0},{mel:PL_A,ch:PL_AC,lvl:1},{mel:PL_B,ch:PL_BC,lvl:1},{mel:PL_A,ch:PL_AC,lvl:2},{mel:PL_B,ch:PL_BC,lvl:2},{mel:'C5:8',ch:'Fmaj7:4 Cmaj7:4',lvl:0}]},
- {id:'ode',title:'Ode à la joie',by:'Beethoven · pop',style:'pop',bpm:112,tr:12,sec:[
+ {id:'ode',genre:'Classique',title:'Ode à la joie',by:'Beethoven · pop',style:'pop',bpm:112,tr:12,sec:[
   {mel:'R:16',ch:OD_1C,lvl:0},{mel:OD_1,ch:OD_1C,lvl:1},{mel:OD_2,ch:OD_2C,lvl:1},{mel:OD_B,ch:OD_BC,lvl:2},{mel:OD_2,ch:OD_2C,lvl:2},{mel:OD_B,ch:OD_BC,lvl:2},{mel:OD_1,ch:OD_1C,lvl:2},{mel:OD_2,ch:OD_2C,lvl:2},{mel:'C4:4',ch:'C:4',lvl:0}]},
- {id:'green',title:'Greensleeves',by:'Traditionnel anglais · ballade',style:'ballad3',pb:3,bpm:120,tr:0,sec:[
+ {id:'green',genre:'Classique',title:'Greensleeves',by:'Traditionnel anglais · ballade',style:'ballad3',pb:3,bpm:120,tr:0,sec:[
   {mel:'R:8 A4:1',ch:'Am:3 C:3 E:3',lvl:0},{mel:GS_V,ch:GS_VC,lvl:1},{mel:GS_C,ch:GS_CC,lvl:1},{mel:GS_V,ch:GS_VC,lvl:2},{mel:GS_C.replace(/R:2 A4:1$/,'R:3'),ch:GS_CC,lvl:2},{mel:'A4:6',ch:'Am:6',lvl:0}]},
- {id:'canon',title:'Canon en ré',by:'Pachelbel · piano pop',style:'pianopop',bpm:76,tr:0,sec:[
+ {id:'canon',genre:'Classique',title:'Canon en ré',by:'Pachelbel · piano pop',style:'pianopop',bpm:76,tr:0,sec:[
   {mel:'R:16',ch:CN_C,lvl:0},{mel:CN_1,ch:CN_C,lvl:0},{mel:CN_2,ch:CN_C,lvl:1},{mel:CN_3,ch:CN_C,lvl:1},{mel:CN_4,ch:CN_C,lvl:2},{mel:CN_1,ch:CN_C,lvl:2},{mel:CN_2,ch:CN_C,lvl:2},{mel:CN_4,ch:CN_C,lvl:2},{mel:'D5:6',ch:'D:6',lvl:0}]},
- {id:'elise',title:'Lettre à Élise',by:'Beethoven · chill',style:'chill68',pb:6,bpm:132,tr:0,sec:[
+ {id:'elise',genre:'Classique',title:'Lettre à Élise',by:'Beethoven · chill',style:'chill68',pb:6,bpm:132,tr:0,sec:[
   {mel:'R:4',ch:'Am:4',lvl:0,mul:.5},{mel:FE,ch:FEC,lvl:0,mul:.5},{mel:FE,ch:FEC,lvl:1,mul:.5},{mel:FE3,ch:FE3C,lvl:1,mul:.5},{mel:FEB,ch:FEBC,lvl:2,mul:.5},{mel:FE,ch:FEC,lvl:2,mul:.5},{mel:FE,ch:FEC,lvl:2,mul:.5},{mel:'R:14',ch:'Am:14',lvl:0,mul:.5}]},
- {id:'neons',title:'Néons',by:'Composition originale · synthwave',style:'synthwave',bpm:100,tr:0,sec:[
+ {id:'neons',genre:'Électro',title:'Néons',by:'Composition originale · synthwave',style:'synthwave',bpm:100,tr:0,sec:[
   {mel:'R:16',ch:'Am:4 F:4 C:4 G:4',lvl:0},{mel:NE_A,ch:NE_AC,lvl:1},{mel:NE_B,ch:NE_BC,lvl:2},{mel:NE_A,ch:NE_AC,lvl:1},{mel:NE_B,ch:NE_BC,lvl:2},{mel:'A4:8',ch:'Am:4 F:4',lvl:0}]},
- {id:'turque',title:'Marche turque',by:'Mozart · électro',style:'electro',pb:8,bpm:216,tr:0,sec:[
+ {id:'turque',genre:'Électro',title:'Marche turque',by:'Mozart · électro',style:'electro',pb:8,bpm:216,tr:0,sec:[
   {mel:'R:14',ch:'Am:4 E:4 Am:4 E:2',lvl:0},{mel:MT,ch:MTC,lvl:1},{mel:MT,ch:MTC,lvl:1},{mel:MT,ch:MTC,lvl:2},{mel:MT,ch:MTC,lvl:2},{mel:'R:2 A5:8',ch:'Am:10',lvl:0}]},
- {id:'course',title:'Course de nuit',by:'Composition originale · électro',style:'electro',bpm:124,tr:0,sec:[
+ {id:'course',genre:'Électro',title:'Course de nuit',by:'Composition originale · électro',style:'electro',bpm:124,tr:0,sec:[
   {mel:'R:16',ch:'Em:4 C:4 G:4 D:4',lvl:0},{mel:CO_A,ch:CO_AC,lvl:1},{mel:CO_A,ch:CO_AC,lvl:2},{mel:CO_B,ch:CO_BC,lvl:2},{mel:CO_A,ch:CO_AC,lvl:2},{mel:CO_B,ch:CO_BC,lvl:2},{mel:'E5:4',ch:'Em:4',lvl:0}]},
- {id:'etoile',title:'Ah vous dirai-je maman',by:'Traditionnel · lo-fi',style:'lofi',bpm:92,tr:12,sec:[
+ {id:'etoile',genre:'Lo-fi',title:'Ah vous dirai-je maman',by:'Traditionnel · lo-fi',style:'lofi',bpm:92,tr:12,sec:[
   {mel:'R:16',ch:'C:4 F:4 G:4 C:4',lvl:0},{mel:TW_A,ch:TW_AC,lvl:1},{mel:TW_B,ch:TW_BC,lvl:1},{mel:TW_A,ch:TW_AC,lvl:1},{mel:TW_A,ch:TW_AC,lvl:2},{mel:TW_B,ch:TW_BC,lvl:2},{mel:TW_A,ch:TW_AC,lvl:2},{mel:'C4:4',ch:'C:4',lvl:0}]},
- {id:'jingle',title:'Jingle Bells',by:'Pierpont · pop festive',style:'pop',bpm:136,tr:12,sec:[
+ {id:'jingle',genre:'Fêtes',title:'Jingle Bells',by:'Pierpont · pop festive',style:'pop',bpm:136,tr:12,sec:[
   {mel:'R:16',ch:'C:4 F:4 G7:4 C:4',lvl:0},{mel:JB1,ch:JB1C,lvl:1},{mel:JB2,ch:JB2C,lvl:1},{mel:JB1,ch:JB1C,lvl:2},{mel:JB2,ch:JB2C,lvl:2},{mel:'C4:4',ch:'C:4',lvl:0}]},
- {id:'ciel',title:'Ciel d\'été',by:'Composition originale · pop',style:'pop',bpm:104,tr:0,sec:[
+ {id:'ciel',genre:'Pop',title:'Ciel d\'été',by:'Composition originale · pop',style:'pop',bpm:104,tr:0,sec:[
   {mel:'R:16',ch:'C:4 G:4 Am:4 F:4',lvl:0},{mel:CE_A,ch:CE_AC,lvl:1},{mel:CE_B,ch:CE_BC,lvl:2},{mel:CE_A,ch:CE_AC,lvl:1},{mel:CE_B,ch:CE_BC,lvl:2},{mel:'C5:4',ch:'C:4',lvl:0}]},
- {id:'minuit',title:'Minuit',by:'Composition originale · lo-fi jazz',style:'lofi',bpm:76,tr:0,sec:[
+ {id:'minuit',genre:'Lo-fi',title:'Minuit',by:'Composition originale · lo-fi jazz',style:'lofi',bpm:76,tr:0,sec:[
   {mel:'R:16',ch:'Dm7:4 G7:4 Cmaj7:4 A7:4',lvl:0},{mel:MI_A,ch:MI_AC,lvl:1},{mel:MI_B,ch:MI_BC,lvl:1},{mel:MI_A,ch:MI_AC,lvl:2},{mel:MI_B,ch:MI_BC,lvl:2},{mel:'C5:8',ch:'Cmaj7:8',lvl:0}]},
- {id:'vague',title:'Vague',by:'Composition originale · house',style:'electro',bpm:122,tr:0,sec:[
+ {id:'vague',genre:'Électro',title:'Vague',by:'Composition originale · house',style:'electro',bpm:122,tr:0,sec:[
   {mel:'R:16',ch:'Fm:4 Db:4 Ab:4 Eb:4',lvl:0},{mel:VA_A,ch:VA_AC,lvl:1},{mel:VA_A,ch:VA_AC,lvl:2},{mel:VA_B,ch:VA_BC,lvl:2},{mel:VA_A,ch:VA_AC,lvl:2},{mel:VA_B,ch:VA_BC,lvl:2},{mel:'Ab5:4',ch:'Ab:4',lvl:0}]},
- {id:'roi',title:'Dans l\'antre du roi de la montagne',by:'Grieg · électro qui accélère',style:'electro',bpm:112,tr:12,sec:[
+ {id:'roi',genre:'Électro',title:'Dans l\'antre du roi de la montagne',by:'Grieg · électro qui accélère',style:'electro',bpm:112,tr:12,sec:[
   {mel:MK,ch:MKC,lvl:0,bpm:108},{mel:MK,ch:MKC,lvl:1,bpm:128},{mel:MK,ch:MKC,lvl:2,bpm:152},{mel:MK,ch:MKC,lvl:2,bpm:180},{mel:MK,ch:MKC,lvl:2,bpm:208},{mel:'B3:4',ch:'Bm:4',lvl:0,bpm:208}]}
 ];
 
@@ -275,36 +376,36 @@ const midi=s=>{const m=/^([A-G])(#|b)?(-?\d)$/.exec(s);if(!m)throw new Error('no
 const QUAL={'':[0,4,7],m:[0,3,7],'7':[0,4,7,10],m7:[0,3,7,10],maj7:[0,4,7,11],sus4:[0,5,7],sus2:[0,2,7],dim:[0,3,6],add9:[0,4,7,14]};
 function chord(sym){if(sym==='N')return null;const m=/^([A-G])(#|b)?(maj7|m7|m|7|sus4|sus2|dim|add9)?$/.exec(sym);if(!m)throw new Error('accord '+sym);
  const r=(NB[m[1]]+(m[2]==='#'?1:m[2]==='b'?-1:0)+12)%12,iv=QUAL[m[3]||''];
- const v=[...new Set(iv.map(i=>{let n=48+r+i;while(n<53)n+=12;while(n>=69)n-=12;return n}))].sort((a,b)=>a-b);return{r,v}}
+ const v=[...new Set(iv.map(i=>{let n=48+r+i;while(n<53)n+=12;while(n>=69)n-=12;return n}))].sort((a,b)=>a-b);return{r,v,iv}}
 function seq(src,mul){const out=[];let b=0,d=1;for(const tok of src.trim().split(/\s+/)){const[ns,ds]=tok.split(':');if(ds)d=parseFloat(ds);out.push({b,d:d*mul,s:ns});b+=d*mul}return{ev:out,len:b}}
 
 /* ================= arrangement ================= */
 function arrange(song,tm){
  const st=STY[song.style],pb=song.pb||4,secs=[];let beat=0,sec=0;
  for(const s of song.sec){const mul=s.mul||1,m=seq(s.mel,mul),c=seq(s.ch,mul),bpm=(s.bpm||song.bpm)*tm,len=Math.max(m.len,c.len);
-  secs.push({b0:beat,len,bpm,t0:sec,lvl:s.lvl,m,c});beat+=len;sec+=len*60/bpm}
+  secs.push({b0:beat,len,bpm,t0:sec,lvl:s.lvl,m,c,tr:s.tr||0});beat+=len;sec+=len*60/bpm}
  const total=beat,secAt=b=>{let s=secs[0];for(const x of secs)if(b>=x.b0-1e-6)s=x;return s},tOf=b=>{const s=secAt(b);return s.t0+(b-s.b0)*60/s.bpm};
  const chords=[];for(const s of secs)for(const e of s.c.ev)chords.push({b0:s.b0+e.b,b1:s.b0+e.b+e.d,c:chord(e.s)});
  const chAt=b=>{for(const c of chords)if(b>=c.b0-1e-6&&b<c.b1-1e-6)return c.c;return null};
  const mel=[],acc=[],beats=[];
- for(const s of secs)for(const e of s.m.ev)if(e.s!=='R')for(const n of e.s.split('+'))mel.push({t:tOf(s.b0+e.b),d:tOf(s.b0+e.b+e.d)-tOf(s.b0+e.b),n:midi(n)+song.tr,v:.9,i:st.mel});
+ for(const s of secs)for(const e of s.m.ev)if(e.s!=='R')for(const n of e.s.split('+'))mel.push({t:tOf(s.b0+e.b),d:tOf(s.b0+e.b+e.d)-tOf(s.b0+e.b),n:midi(n)+song.tr+(s.tr||0),v:.9,i:st.mel});
  for(let b=0;b<total;b++)beats.push(tOf(b));
  const extra=[],u=pb===6||pb===8?1:.5,below=(n,c)=>{if(!c)return null;const pc=c.v.map(x=>x%12);for(let k=3;k<=12;k++)if(pc.includes(((n-k)%12+12)%12))return n-k;return null};
- {let mi=0;for(const s of secs)for(const e of s.m.ev){if(e.s==='R')continue;const b=s.b0+e.b,ns=e.s.split('+').map(x=>midi(x)+song.tr),top=Math.max(...ns),ti=mi+ns.indexOf(top),c=chAt(b);mi+=ns.length;if(!c)continue;
+ {let mi=0;for(const s of secs)for(const e of s.m.ev){if(e.s==='R')continue;const b=s.b0+e.b,ns=e.s.split('+').map(x=>midi(x)+song.tr+(s.tr||0)),top=Math.max(...ns),ti=mi+ns.indexOf(top),c=chAt(b);mi+=ns.length;if(!c)continue;
   if(chords.some(x=>Math.abs(x.b0-b)<1e-6)||(Math.abs(b/(4*u)-Math.round(b/(4*u)))<1e-6&&e.d>=2*u)){const h=below(top,c);if(h)extra.push({t:tOf(b),d:tOf(b+e.d)-tOf(b),n:h,v:.7,i:st.mel,k:'h',of:ti})}
   for(let q=1;b+q*u<b+e.d-u*.5;q++){const fb=b+q*u,fc=chAt(fb),h1=below(top,fc);if(!h1)continue;const h2=below(h1,fc)||h1-12;extra.push({t:tOf(fb),d:(tOf(fb+u)-tOf(fb))*.9,n:q%2?h2:h1,v:.55,i:st.mel,k:'f',lv:q%2?2:1})}}}
  // nappes
  if(st.pad)for(const c of chords){const s=secAt(c.b0);if(!c.c||s.lvl<(st.pl||0))continue;const t=tOf(c.b0),d=tOf(c.b1)-t;for(const n of c.c.v)acc.push({t,d,n,v:.55,i:st.pad})}
- const parts=['kick','snare','clap','hat','hat2','oh','bass','keys','arp'];
+ const parts=['kick','snare','clap','hat','hat2','oh','crash','rim','shaker','ride','bass','keys','arp'],PERC=new Set(['kick','snare','clap','hat','hat2','oh','crash','rim','shaker','ride']);
  for(let bar=0;bar*pb<total;bar++)for(const p of parts){const pat=st[p];if(!pat)continue;const L=pat.length,step=pb/L;
   for(let i=0;i<L;i++){const ch=pat[i];if(ch==='.')continue;const b=bar*pb+i*step;if(b>=total-1e-6)break;const s=secAt(b),lv=s.lvl;
-   const need={kick:st.dl,hat:st.dl,snare:st.sl,clap:st.sl,oh:st.sl,hat2:2,bass:1,keys:st.kl||0,arp:st.al||0}[p];if(lv<need)continue;
-   let t=tOf(b);if(st.swing&&i%2===1)t+=(st.swing-.5)*2*step*60/s.bpm;
-   if(p==='kick'||p==='snare'||p==='clap'||p==='hat'||p==='hat2'||p==='oh'){acc.push({t,d:.2,n:0,v:p==='hat2'?.35:(i%4===0?1:.8),i:p==='hat2'?'hat':p});continue}
+   const need={kick:st.dl,hat:st.dl,snare:st.sl,clap:st.sl,oh:st.sl,crash:2,rim:st.dl,shaker:st.dl,ride:st.dl,hat2:2,bass:st.bl??1,keys:st.kl||0,arp:st.al||0}[p];if(lv<need)continue;
+   let t=tOf(b);if(st.swing&&i%2===1)t+=(st.swing-.5)*2*step*60/s.bpm;if(st.swing8&&i%4===2)t+=(st.swing8-.5)*4*step*60/s.bpm;
+   if(PERC.has(p)){acc.push({t,d:.2,n:0,v:p==='hat2'?.35:(i%4===0?1:.8),i:p==='hat2'?'hat':p==='kick'?st.kickI||'kick':p==='snare'?st.snareI||'snare':p});continue}
    const c=chAt(b);if(!c)continue;let k=i+1;while(k<L&&pat[k]==='.')k++;const d=Math.max(.06,tOf(Math.min(b+(k-i)*step,total))-tOf(b))*.92;
-   if(p==='bass'){const n=33+((c.r-9+12)%12)+(ch==='5'?7:ch==='O'?12:0);acc.push({t,d,n,v:.9,i:st.bassI})}
-   else if(p==='keys')for(const n of c.v)acc.push({t,d,n,v:.42,i:st.keysI});
-   else{const an=[...c.v,c.v[0]+12,c.v[1]+12],idx=/\d/.test(ch)?+ch:i;acc.push({t,d:Math.min(d*1.6,1.2),n:an[idx%an.length]+(st.arpI==='pluck'?12:0),v:.5,i:st.arpI})}}}
+   if(p==='bass'){const n=33+((c.r-9+12)%12)+({'3':c.iv[1],'5':7,'6':9,'7':c.iv[3]??10,O:12}[ch]||0);acc.push({t,d:d*(st.bd||1),n,v:.9,i:st.bassI})}
+   else if(p==='keys'){const rr=40+((c.r-4+12)%12),ns=st.power?[rr,rr+7,rr+12]:c.v;ns.forEach((n,j)=>acc.push({t:t+(st.strum?j*st.strum:0),d:d*(st.kd||1),n,v:st.kv||.42,i:st.keysI}))}
+   else{const an=[...c.v,c.v[0]+12,c.v[1]+12],idx=/\d/.test(ch)?+ch:i;acc.push({t,d:Math.min(d*1.6,1.2),n:an[idx%an.length]+(st.arpO??(st.arpI==='pluck'?12:0)),v:st.av||.5,i:st.arpI})}}}
  return{mel,acc,extra,beats,dur:sec,crackle:st.crackle,warm:st.warm}}
 
 const GM=p=>p<8?'piano':p<16?'epiano':p<24?'pad':p<32?'pluck':p<40?'bass':p<56?'strings':p<88?'lead':p<96?'pad':'pluck';
@@ -321,7 +422,7 @@ function arrangeMidi(song,tm){
 /* ================= synthés (rendu JS pur) ================= */
 const mtof=n=>440*2**((n-69)/12),TW=2*Math.PI;
 /* [volume, envoi réverb, panoramique] */
-const BUS={piano:[1,.22,0],epiano:[1,.3,0],pad:[.5,.5,-.15],strings:[.45,.45,.15],pluck:[.38,.3,-.3],lead:[.55,.28,0],bass:[.6,0,0],subbass:[.8,0,0],kick:[.9,.03,0],snare:[.42,.18,.05],clap:[.38,.22,0],hat:[.26,.06,.3],oh:[.2,.08,.3],tom:[.5,.15,-.1]};
+const BUS={piano:[1,.22,0],epiano:[1,.3,0],pad:[.5,.5,-.15],strings:[.45,.45,.15],pluck:[.38,.3,-.3],lead:[.55,.28,0],bass:[.6,0,0],subbass:[.8,0,0],kick:[.9,.03,0],snare:[.42,.18,.05],clap:[.38,.22,0],hat:[.26,.06,.3],oh:[.2,.08,.3],tom:[.5,.15,-.1],crash:[.25,.15,-.2],ride:[.3,.1,.25],rim:[.35,.1,.15],shaker:[.3,.08,.35],guitar:[.6,.2,-.2],harp:[.55,.35,.2],organ:[.7,.25,0],flute:[.7,.3,0],marimba:[.8,.25,.1],musicbox:[.8,.4,0],brass:[.7,.25,0],dist:[.5,.12,-.1],chip:[.5,.05,0],chipbass:[.6,0,0],sub808:[.85,0,0]};
 let seed=22222;const rnd=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return(seed>>>0)/2147483648-1};
 const blep=(t,dt)=>t<dt?(t/=dt,t+t-t*t-1):t>1-dt?(t=(t-1)/dt,t*t+t+t+1):0;
 const ca=(fc,sr)=>1-Math.exp(-TW*Math.min(fc,sr*.45)/sr);
@@ -354,7 +455,30 @@ const GEN={
  clap(b,f,d,v,sr){const L=Math.ceil(.35*sr),ah=ca(700,sr),al=ca(2200,sr),db=ex(.004,sr),dl=ex(.06,sr),b1=Math.floor(.011*sr),b2=Math.floor(.022*sr),te=Math.floor(.03*sr);let h=0,l=0,eb=1,el=.2;
   for(let i=0;i<L;i++){if(i===b1||i===b2)eb=1;const r=rnd();h+=ah*(r-h);l+=al*(r-h-l);eb*=db;let e;if(i<te)e=.2+.8*eb;else{el*=dl;e=el}b[i]=l*e*v*2}return L},
  hat(b,f,d,v,sr,n,open){const L=Math.ceil((open?.5:.12)*sr),a=ca(open?6500:7500,sr),de=ex(open?.09:.016,sr);let l=0,e=v*(open?.5:.6);for(let i=0;i<L;i++){const r=rnd();l+=a*(r-l);e*=de;b[i]=(r-l)*e}return L},
- oh(b,f,d,v,sr,n){return GEN.hat(b,f,d,v,sr,n,1)}
+ oh(b,f,d,v,sr,n){return GEN.hat(b,f,d,v,sr,n,1)},
+ crash(b,f,d,v,sr){const L=Math.ceil(1.4*sr),a=ca(4500,sr),de=ex(.45,sr);let l=0,e=v*.5;for(let i=0;i<L;i++){const r=rnd();l+=a*(r-l);e*=de;b[i]=(r-l)*e}return L},
+ ride(b,f,d,v,sr){const L=Math.ceil(.5*sr),a=ca(6000,sr),de=ex(.18,sr);let l=0,e=v*.35,p1=0,p2=0;for(let i=0;i<L;i++){const r=rnd();l+=a*(r-l);e*=de;p1+=3150/sr;p2+=4720/sr;b[i]=((r-l)*.7+.15*Math.sin(TW*p1)+.1*Math.sin(TW*p2))*e}return L},
+ rim(b,f,d,v,sr){const L=Math.ceil(.08*sr),de=ex(.012,sr);let e=v*.7,p=0;for(let i=0;i<L;i++){p+=1750/sr;e*=de;b[i]=(Math.sin(TW*p)*.8+rnd()*.3)*e}return L},
+ shaker(b,f,d,v,sr){const L=Math.ceil(.09*sr),a=ca(5000,sr),at=Math.floor(.012*sr),de=ex(.025,sr);let l=0,e=v*.35;for(let i=0;i<L;i++){const r=rnd();l+=a*(r-l);if(i>at)e*=de;b[i]=(r-l)*e*(i<at?i/at:1)}return L},
+ guitar(b,f,d,v,sr,n,br){const L=Math.ceil(Math.min(d+.5,3)*sr),P=Math.max(2,Math.round(sr/f)),buf=new Float32Array(P),k=br||.55,dr=ex(.06,sr),ri=d*sr;let lp=0;
+  for(let i=0;i<P;i++){lp+=k*(rnd()-lp);buf[i]=lp}let idx=0,er=1,dc=Math.pow(.5,1/(sr*Math.max(.25,1.4-n*.012)/P));
+  for(let i=0;i<L;i++){const x=buf[idx],nx=buf[(idx+1)%P];buf[idx]=(x+nx)*.5*dc;idx=(idx+1)%P;if(i>ri)er*=dr;b[i]=x*v*.9*er}return L},
+ harp(b,f,d,v,sr,n){return GEN.guitar(b,f,Math.max(d,1.2),v,sr,n,.85)},
+ organ(b,f,d,v,sr){const L=Math.ceil((d+.15)*sr),p=.09*v,at=Math.floor(.012*sr),ri=d*sr,dr=ex(.05,sr);let ph=0,er=1;
+  for(let i=0;i<L;i++){ph+=f/sr;if(ph>1e6)ph-=1e6;const x=TW*ph,tr=1+.06*Math.sin(TW*6*i/sr);if(i>ri)er*=dr;b[i]=(Math.sin(x)+.6*Math.sin(2*x)+.35*Math.sin(3*x)+.2*Math.sin(4*x)+.1*Math.sin(6*x))*p*tr*er*(i<at?i/at:1)}return L},
+ flute(b,f,d,v,sr){const L=Math.ceil((d+.2)*sr),p=.3*v,at=Math.floor(.06*sr),ri=d*sr,dr=ex(.06,sr),a=ca(2500,sr),v0=.2*sr;let ph=0,er=1,l=0;
+  for(let i=0;i<L;i++){const vib=1+(i>v0?.006*Math.sin(TW*5*i/sr):0);ph+=f*vib/sr;if(ph>=1)ph-=1;const r=rnd();l+=a*(r-l);if(i>ri)er*=dr;const env=(i<at?i/at:1)*er;b[i]=(Math.sin(TW*ph)+.12*Math.sin(2*TW*ph)+l*.18*(i<at*2?1.5:.6))*p*env}return L},
+ marimba(b,f,d,v,sr,n){const tau=.18+Math.max(0,84-n)*.012,L=Math.ceil(Math.min(tau*5,2.5)*sr),d1=ex(tau,sr),d2=ex(.03,sr);let e1=.45*v,e2=.25*v;
+  for(let i=0;i<L;i++){e1*=d1;e2*=d2;b[i]=Math.sin(TW*f*i/sr)*e1+Math.sin(TW*f*3.93*i/sr)*e2}return L},
+ musicbox(b,f,d,v,sr){const L=Math.ceil(2*sr),d1=ex(.7,sr),d2=ex(.18,sr);let e1=.3*v,e2=.12*v;for(let i=0;i<L;i++){e1*=d1;e2*=d2;const x=TW*f*i/sr;b[i]=Math.sin(x)*e1+Math.sin(2*x)*e2*.7+Math.sin(5.4*x)*e2*.4}return L},
+ brass(b,f,d,v,sr){const L=Math.ceil((d+.15)*sr),p=.17*v,at=Math.floor(.03*sr),ri=d*sr,dr=ex(.05,sr),dt=f/sr;let ph=0,y1=0,y2=0,er=1,fc=300;
+  for(let i=0;i<L;i++){ph+=dt*(1+(i>.25*sr?.004*Math.sin(TW*5.5*i/sr):0));if(ph>=1)ph-=1;if((i&15)===0)fc=i<.08*sr?300+2400*i/(.08*sr):Math.max(1500,fc*.9995);const a=ca(fc,sr);
+   y1+=a*(2*ph-1-blep(ph,dt)-y1);y2+=a*(y1-y2);if(i>ri)er*=dr;b[i]=y2*p*er*(i<at?i/at:1)}return L},
+ dist(b,f,d,v,sr){const L=Math.ceil((d+.1)*sr),a=ca(2600,sr),ri=d*sr,dr=ex(.03,sr),d1=f/sr,d2=f*1.006/sr;let p1=0,p2=.4,y1=0,y2=0,er=1;
+  for(let i=0;i<L;i++){p1+=d1;if(p1>=1)p1-=1;p2+=d2;if(p2>=1)p2-=1;const x=Math.tanh(((2*p1-1)+(2*p2-1))*3);y1+=a*(x-y1);y2+=a*(y1-y2);if(i>ri)er*=dr;b[i]=y2*.13*v*er*(i<40?i/40:1)}return L},
+ chip(b,f,d,v,sr){const L=Math.ceil((d+.06)*sr),p=.12*v,ri=d*sr,dr=ex(.02,sr),dt=f/sr;let ph=0,er=1;for(let i=0;i<L;i++){const vib=i>.2*sr?1+.004*Math.sin(TW*6*i/sr):1;ph+=dt*vib;if(ph>=1)ph-=1;if(i>ri)er*=dr;b[i]=(ph<.5?1:-1)*p*er*(i<30?i/30:1)}return L},
+ chipbass(b,f,d,v,sr){const L=Math.ceil((d+.04)*sr),ri=d*sr,dr=ex(.015,sr);let ph=0,er=1;for(let i=0;i<L;i++){ph+=f/sr;if(ph>=1)ph-=1;if(i>ri)er*=dr;b[i]=(4*Math.abs(ph-.5)-1)*.35*v*er}return L},
+ sub808(b,f,d,v,sr){const L=Math.ceil(Math.min(d+.3,2)*sr),de=ex(.55,sr),dg=ex(.03,sr);let ph=0,e=.55*v,g=.6;for(let i=0;i<L;i++){g*=dg;ph+=f*(1+g)/sr;e*=de;b[i]=Math.tanh(Math.sin(TW*ph)*1.6)*e}return L}
 };
 function freeverb(inp,outL,outR,sr,wet,from,to){const k=sr/44100,CB=[1116,1188,1277,1356,1422,1491],AP=[556,441,341,225];
  for(const [out,sp] of [[outL,0],[outR,23]]){const tmp=new Float32Array(to-from);
@@ -362,11 +486,12 @@ function freeverb(inp,outL,outR,sr,wet,from,to){const k=sr/44100,CB=[1116,1188,1
   for(const al of AP){const n=Math.round((al+sp)*k),buf=new Float32Array(n);let idx=0;for(let i=0;i<tmp.length;i++){const bo=buf[idx],x=tmp[i];tmp[i]=bo-x;buf[idx]=x+bo*.5;if(++idx>=n)idx=0}}
   for(let i=from;i<to;i++)out[i]+=tmp[i-from]*wet*.03}}
 const TMP=new Float32Array(32000*16);
+const fadeT=L=>{L=Math.min(L,TMP.length);const F=Math.min(320,L);for(let i=0;i<F;i++)TMP[L-1-i]*=i/F;return L};
 async function renderAudio(arr,prog){
  const sr=32000,len=Math.ceil((arr.dur+2.5)*sr),O={acc:[new Float32Array(len),new Float32Array(len)],mel:[new Float32Array(len),new Float32Array(len)]},snd={acc:new Float32Array(len),mel:new Float32Array(len)};
  const evs=arr.acc.map(e=>[e,'acc']).concat(arr.mel.map(e=>[e,'mel']));let tm=performance.now();seed=22222;
  for(let k=0;k<evs.length;k++){const[e,s]=evs[k],g=GEN[e.i]||GEN.piano,st=Math.floor((e.t+.05)*sr);if(st>=len)continue;
-  const L=Math.min(g(TMP,mtof(e.n||60),Math.min(e.d,12),e.v,sr,e.n||60),TMP.length,len-st),[vol,sd,pan]=BUS[e.i]||[.5,.2,0],gl=vol*Math.cos((pan+1)*Math.PI/4)*1.414,gr=vol*Math.sin((pan+1)*Math.PI/4)*1.414,gs=vol*sd;
+  const L=Math.min(fadeT(g(TMP,mtof(e.n||60),Math.min(e.d,12),e.v,sr,e.n||60)),TMP.length,len-st),[vol,sd,pan]=BUS[e.i]||[.5,.2,0],gl=vol*Math.cos((pan+1)*Math.PI/4)*1.414,gr=vol*Math.sin((pan+1)*Math.PI/4)*1.414,gs=vol*sd;
   const oL=O[s][0],oR=O[s][1],sn=snd[s];for(let i=0;i<L;i++){const x=TMP[i];oL[st+i]+=x*gl;oR[st+i]+=x*gr;sn[st+i]+=x*gs}
   if(performance.now()-tm>35){prog&&prog(.75*k/evs.length);await new Promise(r=>setTimeout(r,0));tm=performance.now()}}
  freeverb(snd.acc,O.acc[0],O.acc[1],sr,.55,0,len);prog&&prog(.85);await new Promise(r=>setTimeout(r,0));
@@ -376,7 +501,7 @@ async function renderAudio(arr,prog){
  const rms=(L,act)=>{let s=0,n=0;for(let i=0;i<len;i+=4){const x=L[i];if(!act||Math.abs(x)>2e-3){s+=x*x;n++}}return Math.sqrt(s/Math.max(1,n))};
  const ra=rms(aL)||1e-3,rm=rms(mL,1)||1e-3,g=.1/ra,k=.42/rm;
  const mk=(L,R)=>{const b=ctx.createBuffer(2,len,sr);for(const c of[L,R])for(let i=0;i<len;i++)c[i]=Math.tanh(c[i]*g);b.copyToChannel(L,0);b.copyToChannel(R,1);return b};
- const acc=mk(aL,aR),notes=arr.mel.concat(arr.extra||[]).map(e=>{const G2=GEN[e.i]||GEN.piano,L=Math.min(G2(TMP,mtof(e.n),Math.min(e.d,6),e.v,sr,e.n),TMP.length),vol=(BUS[e.i]||[1])[0],b=ctx.createBuffer(1,L,sr),d=b.getChannelData(0);
+ const acc=mk(aL,aR),notes=arr.mel.concat(arr.extra||[]).map(e=>{const G2=GEN[e.i]||GEN.piano,L=Math.min(fadeT(G2(TMP,mtof(e.n),Math.min(e.d,6),e.v,sr,e.n)),TMP.length),vol=(BUS[e.i]||[1])[0],b=ctx.createBuffer(1,L,sr),d=b.getChannelData(0);
   for(let i=0;i<L;i++)d[i]=Math.tanh(TMP[i]*vol*k);return b});
  prog&&prog(1);return{acc,notes}}
 /* ================= audio temps réel ================= */
@@ -728,16 +853,21 @@ $('#file').addEventListener('change',async e=>{const files=[...e.target.files];e
  render()});
 
 /* ================= menu ================= */
-function renderDiffs(){$('#diffs').innerHTML=Object.entries(DIFFS).map(([k,d])=>`<button data-d="${k}" aria-pressed="${k===diffKey}">${d.name}</button>`).join('');$('#diffDesc').textContent=DIFFS[diffKey].desc}
+function renderDiffs(){$('#diffs').innerHTML=Object.entries(DIFFS).map(([k,d])=>`<button data-d="${k}" aria-pressed="${k===diffKey}">${d.name}</button>`).join('');$('#diffDesc').textContent=DIFFS[diffKey].desc+' Morceaux importés : densité '+['simple','normale','complète'][DENS[diffKey]??1]+'.'}
 $('#diffs').addEventListener('click',e=>{const b=e.target.closest('[data-d]');if(!b)return;diffKey=b.dataset.d;store.set('diff',diffKey);renderDiffs();render()});
 const keyArt=(id,imp)=>{const r=rngOf(hash(id));return`<span class="key${imp?' imp-k':''}">${[0,1,2].filter(()=>r()<.7).map(i=>`<i style="left:${4+i*14}px"></i>`).join('')}</span>`};
-LIB.forEach(s=>{s.kind='lib';let d=0;for(const x of s.sec){const m=seq(x.mel,x.mul||1),c=seq(x.ch,x.mul||1);d+=Math.max(m.len,c.len)*60/(x.bpm||s.bpm)}s.dur=d});
+LIB.push(...LIB2,...LIB3);LIB.forEach(s=>{s.kind='lib';let d=0;for(const x of s.sec){const m=seq(x.mel,x.mul||1),c=seq(x.ch,x.mul||1);d+=Math.max(m.len,c.len)*60/(x.bpm||s.bpm)}s.dur=d});
 async function render(){imported=(await DB.all()).sort((a,b)=>b.added-a.added);const best=store.get('best',{});
  const status=b=>{if(!b||!b.s)return`<span class="rec"><span class="new">Nouveau</span></span>`;const done=b.d||b.st>0,p=done?100:(b.p||0);
   return`<span class="rec">${done?starsHTML(b.st)+'<br>'+fmtN(b.s):`<b class="pct">${p?p+' %':'Commencé'}</b><br>pas fini`}</span><i class="pbar${done?' full':''}" style="width:${p}%"></i>`};
  const row=(s,imp)=>{const b=best[s.id+'|'+diffKey];const sub=imp?(s.kind==='midi'?'MIDI importé':'Audio importé')+' · '+fmtT(s.dur):esc(s.by)+' · '+fmtT(s.dur);
   return`<li class="li"><button class="song" data-id="${esc(s.id)}">${keyArt(s.id,imp)}<span><div class="st">${esc(s.title)}</div><div class="sub">${sub}</div></span>${status(b)}</button>${imp?`<button class="del" data-del="${esc(s.id)}" aria-label="Supprimer ${esc(s.title)}">✕</button>`:''}</li>`};
- $('#list').innerHTML=(imported.length?imported.map(s=>row(s,true)).join(''):'')+LIB.map(s=>row(s,false)).join('')}
+ const gs=['Tous',...new Set(LIB.map(s=>s.genre)),...(imported.length?['Importés']:[])];if(!gs.includes(genre))genre='Tous';
+ $('#genres').innerHTML=gs.map(g=>`<button data-g="${esc(g)}" aria-pressed="${g===genre}">${esc(g)}<span>${g==='Tous'?LIB.length+imported.length:g==='Importés'?imported.length:LIB.filter(s=>s.genre===g).length}</span></button>`).join('');
+ const sel=genre==='Tous'?[...imported.map(s=>[s,true]),...LIB.map(s=>[s,false])]:genre==='Importés'?imported.map(s=>[s,true]):LIB.filter(s=>s.genre===genre).map(s=>[s,false]);
+ $('#list').innerHTML=sel.length?sel.map(([s,i])=>row(s,i)).join(''):'<li class="empty">Aucun morceau ici pour l\'instant.</li>'}
+let genre=store.get('genre','Tous');
+$('#genres').addEventListener('click',e=>{const b=e.target.closest('[data-g]');if(!b)return;genre=b.dataset.g;store.set('genre',genre);render()});
 $('#list').addEventListener('click',async e=>{const d=e.target.closest('[data-del]');
  if(d){if(d.classList.contains('armed')){await DB.del(d.dataset.del);render()}else{d.classList.add('armed');d.textContent='Supprimer';setTimeout(()=>{if(d.isConnected){d.classList.remove('armed');d.textContent='✕'}},3000)}return}
  const b=e.target.closest('[data-id]');if(!b)return;const id=b.dataset.id,s=LIB.find(x=>x.id===id)||imported.find(x=>x.id===id);if(s)start(s)});
@@ -748,7 +878,7 @@ renderDiffs();render();
 $('#ver').textContent='v'+VERSION;
 try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});
  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!G&&!sessionStorage.getItem('ivr')){try{sessionStorage.setItem('ivr','1')}catch(e){}location.reload()}})}}catch(e){}
-window.__ivoire={parseMidi,buildChart,arrange,arrangeMidi,renderAudio,LIB,DIFFS,STY,seq,ensureCtx,G:()=>G};window.__now=()=>G?now():0;
+window.__ivoire={GEN,parseMidi,buildChart,arrange,arrangeMidi,renderAudio,LIB,DIFFS,STY,seq,ensureCtx,G:()=>G};window.__now=()=>G?now():0;
 }
 </script>
 </body>
