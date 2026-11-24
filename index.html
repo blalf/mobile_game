@@ -151,9 +151,9 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
       <span class="hint" style="margin:0">Si les tuiles arrivent avant le son (écouteurs Bluetooth), monte la valeur.</span></div>
     <label class="chk"><input type="checkbox" id="vib"> Vibrer quand je rate</label>
     <label class="chk"><input type="checkbox" id="zen"> Mode sans échec (on ne perd jamais)</label>
-    <div class="f"><label>Synchro image <output id="calO"></output></label>
-      <span class="hint" style="margin:0">Se règle tout seul au fil des parties. Pour le faire d'un coup : lance le calibrage et tape chaque tuile quand la ligne passe en son milieu, 16 tuiles, aucun son.</span>
-      <button class="btn" id="calB" type="button">Calibrer le timing</button></div>
+    <div class="f"><label>Délai de tes taps <output id="calO"></output></label>
+      <span class="hint" style="margin:0">Le temps entre ton geste et sa détection par le téléphone. Sert seulement à juger tes taps (Parfait, Super…), pas au son. Calibrage : tape chaque tuile quand la ligne passe en son milieu, 16 tuiles, aucun son.</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="calB" type="button">Calibrer</button><button class="btn" id="calR" type="button">Remettre à 0</button></div></div>
   </details>
   <p class="foot">Morceaux intégrés : compositions du domaine public, jouées par un synthé intégré. Tes imports restent stockés dans ce navigateur.</p>
 </main>
@@ -175,7 +175,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.14.1';
+const VERSION='0.15.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -193,7 +193,7 @@ const DIFFS={
  maitre:{name:'Maître',look:.72,gap:.07,tempo:1.28,lives:1,win:.08,hold:true,wrong:true,dbl:.7,fill:2,desc:'Toutes les notes et tous les remplissages, une seule erreur et c\'est fini.'}
 };
 let diffKey=store.get('diff','normal');if(!DIFFS[diffKey])diffKey='normal';
-const S=Object.assign({spd:1,tmp:1,off:0,vib:true,zen:false,vis:.01},store.get('set',{}));
+const S=Object.assign({spd:1,tmp:1,off:0,vib:true,zen:false,vis:.03},store.get('set',{}));
 
 /* ================= styles d'arrangement ================= */
 /* motifs : une chaîne = une mesure de motif (pb temps), '.' = silence */
@@ -753,12 +753,13 @@ async function start(song){
   const bus=ctx.createGain();bus.connect(master);const mg=ctx.createGain();mg.connect(melBus);
   clk.off=null;clk.lat=null;clk.n=0;clk.last=0;const t0=ctxNow()+look+1,lg=ctx.createGain();lg.connect(melBus);
   G={song,D,look,...ch,bus,mg,beats,bi:0,lo:0,dlo:0,score:0,combo:0,maxC:0,lives:S.zen||song.kind==='calib'?Infinity:D.lives,cnt:[0,0,0,0],live:true,paused:false,pt:0,
-   start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),lg:lead?lg:null,useLat:!lead,lead:lead?0:song.kind==='calib'?0:S.vis+.02,errs:[],off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};if(G.lg)G.lg.gain.value=1;
+   start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),lg:lead?lg:null,tapLat:song.kind==='calib'?0:S.vis,errs:[],off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};if(G.lg)G.lg.gain.value=1;
   for(const [b,dst] of [[acc,bus],[lead,lg]])if(b){const s=ctx.createBufferSource();s.buffer=b;s.connect(dst);s.start(t0);G.srcs.push(s)}
   hud(true);cancelAnimationFrame(raf);raf=requestAnimationFrame(frame)}
  catch(e){busy();toast((e&&e.message)||'Impossible de lancer ce morceau')}
  finally{starting=false}}
-const now=()=>audioNow()-(G.useLat?0:latNow())-G.start+G.lead-G.off;
+/* temps affiché = son réellement entendu ; tapLat (calibrage) ne sert qu'à juger les taps */
+const now=()=>audioNow()-latNow()-G.start-G.off;
 function stopGame(){if(!G)return;G.live=false;const b=G.bus,m=G.mg,srcs=G.srcs;try{b.gain.setTargetAtTime(0,ctx.currentTime,.08);m.gain.setTargetAtTime(0,ctx.currentTime,.08)}catch(e){}setTimeout(()=>{srcs.forEach(s=>{try{s.stop()}catch(e){}});try{b.disconnect();m.disconnect()}catch(e){}},500);cancelAnimationFrame(raf)}
 function hud(full){$('#score').textContent=fmtN(G.score);$('#combo').textContent=G.combo>=5?G.combo+' combo':'';
  if(full||G._lv!==G.lives){G._lv=G.lives;$('#lives').innerHTML=S.zen?'':Array.from({length:G.D.lives},(_,i)=>`<i class="${i<G.lives?'':'x'}"></i>`).join('')}}
@@ -766,34 +767,36 @@ function melDip(){}
 function geo(){const H=cv.height,ly=H*.82;return{H,ly,pps:ly/G.look}}
 
 /* entrées : tolérantes, multitouch */
-function down(lane,id){if(!G||!G.live||G.paused)return;const t=now(),w=G.D.win,{H,ly,pps}=geo(),early=G.look*.97,late=Math.max(w*1.3,(H-ly)/pps*.85);
+function down(lane,id){if(!G||!G.live||G.paused)return;const t=now()-G.tapLat,w=G.D.win,{H,ly,pps}=geo(),early=G.look*.97,late=Math.max(w*1.3,(H-ly)/pps*.85);
  G.press[lane]++;G.ids.set(id,lane);
  for(let j=G.lo;j<G.tiles.length;j++){const x=G.tiles[j];if(x.t-t>early)break;if(x.res||x.lane!==lane||t-x.t>late)continue;hit(x,t,id);return}
  if(t-G.lastHit[lane]<.35||t<0)return;
  G.flash[lane]={t0:t};if(G.D.wrong&&!S.zen)lose(null,t)}
 function up(id){if(!G)return;const l=G.ids.get(id);if(l!=null){G.press[l]=Math.max(0,G.press[l]-1);G.ids.delete(id)}for(const [x,pid] of G.holds)if(pid===id)endHold(x,now(),false)}
 /* les notes sont programmées un peu en avance pour sonner pile sur le temps malgré la latence audio du téléphone ; coupées si la tuile est ratée */
-function arm(x){if(x.armed||!G.nbuf||!x.ns)return;x.armed=true;const tc=ctx.currentTime,g=ctx.createGain();g.gain.value=0;g.connect(G.mg);x.g=g;
+function arm(x){if(x.armed||!G.nbuf||!x.ns)return;x.armed=true;const tc=ctx.currentTime,g=ctx.createGain();g.connect(G.mg);x.g=g;
  for(const n of x.ns){const b=G.nbuf[n.i];if(!b)continue;const T=G.start+x.t+n.dt,lag=tc-T;if(lag>=b.duration-.05)continue;const s=ctx.createBufferSource();s.buffer=b;s.connect(g);if(lag>0)s.start(tc,lag);else s.start(T)}}
+function playNow(x){const tc=ctx.currentTime,g=ctx.createGain();g.connect(G.mg);x.g=g;x.cutd=0;for(const n of x.ns){const b=G.nbuf[n.i];if(!b)continue;const s=ctx.createBufferSource();s.buffer=b;s.connect(g);s.start(tc+n.dt)}}
 function cut(x){if(!x.g)return;const tc=ctx.currentTime;try{x.g.gain.cancelScheduledValues(tc);x.g.gain.setTargetAtTime(0,tc,.012)}catch(e){}}
-function hit(x,t,id){G.errs.push(ctx.currentTime-(G.start+x.t));const err=Math.abs(t-x.t),w=G.D.win,gr=err<w*.45?0:err<w?1:2;
+function hit(x,t,id){G.errs.push(t+G.tapLat-x.t);const err=Math.abs(t-x.t),w=G.D.win,gr=err<w*.45?0:err<w?1:2;
  x.res='hit';x.ht=t;G.lastHit[x.lane]=t;G.cnt[gr]++;G.combo++;G.maxC=Math.max(G.maxC,G.combo);
  G.score+=[300,200,100][gr]*(1+Math.min(G.combo,100)/100);
  G.pops.push({lane:x.lane,t0:t,txt:['Parfait','Super','Bien'][gr],c:gr?'#121014':'#ff5a4e'});
  if(G.lg){const tc=ctx.currentTime;G.lg.gain.cancelScheduledValues(tc);G.lg.gain.setTargetAtTime(1,tc,.01)}
- if(G.nbuf){if(!x.armed)arm(x);const tc=ctx.currentTime;if(x.g&&!x.cutd&&tc<=G.start+x.t+.06){x.g.gain.cancelScheduledValues(tc);x.g.gain.setValueAtTime(1,tc)}else x.cutd=1}
+ if(G.nbuf){const tc=ctx.currentTime;G.arm=true;if(x.armed&&!x.cutd){}else if(!x.armed&&tc<G.start+x.t-.01)arm(x);else playNow(x)}
  if(x.hd){x.holding=true;G.holds.set(x,id)}hud()}
 function endHold(x,t,full){if(!x.holding)return;x.holding=false;G.holds.delete(x);if(!full&&x.g)try{x.g.gain.cancelScheduledValues(ctx.currentTime);x.g.gain.setTargetAtTime(0,ctx.currentTime,.06)}catch(e){}
  const p=full?1:Math.max(0,Math.min(1,(t-x.t)/x.hd));x.hp=p;G.score+=Math.round(p*x.hd*250);
  if(p>.9)G.pops.push({lane:x.lane,t0:t,txt:'Tenu',c:'#ff5a4e'});hud()}
-function lose(x,t){if(x){x.res='miss';x.mt=t;G.cnt[3]++;cut(x);if(G.lg){const tc=ctx.currentTime;G.lg.gain.cancelScheduledValues(tc);G.lg.gain.setTargetAtTime(0,tc,.04)}G.flash[x.lane]={t0:t};melDip()}G.combo=0;
+function lose(x,t){if(x){x.res='miss';x.mt=t;G.cnt[3]++;cut(x);G.arm=false;for(let j=G.lo;j<G.tiles.length;j++){const y=G.tiles[j];if(y.t>t+1)break;if(y.armed&&!y.res&&!y.cutd){y.cutd=1;cut(y)}}if(G.lg){const tc=ctx.currentTime;G.lg.gain.cancelScheduledValues(tc);G.lg.gain.setTargetAtTime(0,tc,.04)}G.flash[x.lane]={t0:t};melDip()}G.combo=0;
  if(S.vib)try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}
  if(G.lives!==Infinity){G.lives--;if(G.lives<=0){G.live=false;G.failT=t;try{G.bus.gain.setTargetAtTime(0,ctx.currentTime,.25);G.mg.gain.setTargetAtTime(0,ctx.currentTime,.25)}catch(e){}setTimeout(()=>result(false),1100)}}hud()}
-function update(t){const w=G.D.win,T=G.tiles,{H,ly,pps}=geo(),late=Math.max(w*1.3,(H-ly)/pps*.85);
- for(let j=G.lo;j<T.length;j++){const x=T[j];if(x.t>t-late)break;if(!x.res){lose(x,t);if(!G.live)return}}
+function update(t){const w=G.D.win,T=G.tiles,{H,ly,pps}=geo(),late=Math.max(w*1.3,(H-ly)/pps*.85),te=t-G.tapLat;
+ for(let j=G.lo;j<T.length;j++){const x=T[j];if(x.t>te-late)break;if(!x.res){lose(x,t);if(!G.live)return}}
  while(G.lo<T.length&&T[G.lo].res)G.lo++;
- for(let j=G.lo;j<T.length;j++){const x=T[j];if(x.t>t-w*1.2)break;if(x.armed&&!x.res&&!x.cutd){x.cutd=1;cut(x)}}
- if(G.nbuf){const ahead=ctx.currentTime+.35;for(let j=G.lo;j<T.length;j++){const x=T[j];if(G.start+x.t>ahead)break;if(!x.res&&!x.armed)arm(x)}}
+ /* pas de tap peu après le temps de la note : on coupe le son déjà parti */
+ for(let j=G.lo;j<T.length;j++){const x=T[j];if(x.t>te-Math.max(.07,w*.6))break;if(x.armed&&!x.res&&!x.cutd){x.cutd=1;cut(x)}}
+ if(G.nbuf&&G.arm){const ahead=ctx.currentTime+.35;for(let j=G.lo;j<T.length;j++){const x=T[j];if(G.start+x.t>ahead)break;if(!x.res&&!x.armed)arm(x)}}
  for(const x of [...G.holds.keys()])if(t>=x.t+x.hd)endHold(x,t,true);
  $('#prog').style.width=Math.max(0,Math.min(100,t/G.dur*100))+'%';
  if(G.lo>=T.length&&!G.holds.size&&t>Math.max(G.end+1,G.dur)){G.live=false;stopGame();result(true)}}
@@ -849,8 +852,7 @@ const starsHTML=n=>'<span class="stars">'+[0,1,2].map(i=>i<n?'★':'<span class=
 function result(done){if(!G)return;stopGame();
  if(G.song.kind==='calib'){const e=G.errs.slice(2).sort((a,b)=>a-b),m=e.length?e[e.length>>1]:null;G=null;$('#game').hidden=true;$('#home').hidden=false;
   if(m==null||e.length<6){toast('Pas assez de taps, recommence');return}S.vis=Math.max(-.05,Math.min(.3,m));store.set('set',S);$('#calO').textContent=Math.round(S.vis*1000)+' ms';toast('Calibré : tes taps arrivent '+Math.round(m*1000)+' ms après le passage');return}
- /* réglage automatique : si les taps arrivent après le temps de la note, l'image est avancée un peu pour la prochaine partie */
- if(G.song.kind!=='audio'&&G.errs.length>=20){const e=[...G.errs].sort((a,b)=>a-b),m=e[e.length>>1];if(m>-.01)S.vis=Math.min(.3,S.vis+Math.min(.04,m+.015));else if(m<-.09)S.vis=Math.max(-.05,S.vis+Math.max(-.03,(m+.05)/2));store.set('set',S);$('#calO')&&($('#calO').textContent=Math.round(S.vis*1000)+' ms')}const c=G.cnt,tot=G.tiles.length,acc=(c[0]+c[1]*.7+c[2]*.4)/tot,stars=done?(acc>=.93?3:acc>=.8?2:acc>=.55?1:0):0;
+ const c=G.cnt,tot=G.tiles.length,acc=(c[0]+c[1]*.7+c[2]*.4)/tot,stars=done?(acc>=.93?3:acc>=.8?2:acc>=.55?1:0):0;
  const key=G.song.id+'|'+diffKey,best=store.get('best',{}),old=best[key]||{s:0,st:0},rec=G.score>old.s;
  const pct=Math.round(Math.min(1,Math.max(0,G.failT??G.end)/Math.max(.01,G.end))*100);
  best[key]={s:Math.max(old.s,Math.round(G.score)),st:Math.max(old.st,stars),p:Math.max(old.p||(old.st?100:0),done?100:pct),d:!!(old.d||old.st||done)};store.set('best',best);
@@ -896,7 +898,7 @@ function bindSet(id,fmt,key){const el=$('#'+id),o=$('#'+id+'O');el.value=S[key];
 bindSet('spd',v=>'×'+v.toFixed(2),'spd');bindSet('tmp',v=>'×'+v.toFixed(2),'tmp');bindSet('off',v=>(v>0?'+':'')+v+' ms','off');
 for(const k of ['vib','zen']){const el=$('#'+k);el.checked=!!S[k];el.addEventListener('change',()=>{S[k]=el.checked;store.set('set',S)})}
 function calibrate(){const tiles=[];for(let k=0;k<16;k++)tiles.push({t:2+k*.75,lane:k%2?2:1});start({id:'calib',kind:'calib',title:'Calibrage',tiles,dur:2+16*.75+1})}
-$('#calB').addEventListener('click',calibrate);$('#calO').textContent=Math.round(S.vis*1000)+' ms';
+$('#calB').addEventListener('click',calibrate);$('#calR').addEventListener('click',()=>{S.vis=0;store.set('set',S);$('#calO').textContent='0 ms';toast('Remis à 0')});$('#calO').textContent=Math.round(S.vis*1000)+' ms';
 renderDiffs();render();
 $('#ver').textContent='v'+VERSION;
 try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});
