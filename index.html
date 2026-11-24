@@ -91,6 +91,8 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 .bar{height:6px;background:var(--bg2);border-radius:3px;overflow:hidden;margin-top:14px}
 .bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .2s}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translate(-50%,30px);background:var(--ivory);color:#121014;padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;opacity:0;transition:.25s;z-index:20;max-width:90vw;text-align:center;pointer-events:none}
+#ver{position:fixed;right:max(10px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));font-size:12px;color:var(--mute);opacity:.8;pointer-events:none;z-index:5}
+#game:not([hidden])~#ver{display:none}
 #toast.on{opacity:1;transform:translate(-50%,0)}
 @media(prefers-reduced-motion:reduce){.hero .fall{animation:none!important}}
 @keyframes fall{from{transform:translateY(-140px)}to{transform:translateY(240px)}}
@@ -158,9 +160,11 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 <div class="ov" id="ov" hidden><div class="card" id="ovc"></div></div>
 <div class="ov" id="busy" hidden><div class="card"><h3 id="busyT" style="font-size:24px">Analyse…</h3><p class="hint" id="busyS" style="text-align:center"></p><div class="bar"><i id="busyB"></i></div></div></div>
 <div id="toast" role="status"></div>
+<span id="ver"></span>
 
 <script>
 {
+const VERSION='0.6.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -570,7 +574,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&G&&G.live&
 /* pause / résultats */
 $('#pz').addEventListener('click',()=>pause());$('#pz').addEventListener('touchstart',e=>{e.stopPropagation()},{passive:true});
 function pause(){if(!G||!G.live||G.paused)return;G.pt=now();G.paused=true;try{ctx.suspend()}catch(e){}
- overlay(`<h3>Pause</h3><p class="hint" style="text-align:center">${esc(G.song.title)} · ${DIFFS[diffKey].name}</p><div class="acts"><button class="btn primary" data-a="resume">Reprendre</button><button class="btn" data-a="retry">Recommencer</button><button class="btn" data-a="menu">Menu</button></div>`)}
+ overlay(`<h3>Pause</h3><p class="hint" style="text-align:center">${esc(G.song.title)} · ${DIFFS[diffKey].name} · v${VERSION}</p><div class="acts"><button class="btn primary" data-a="resume">Reprendre</button><button class="btn" data-a="retry">Recommencer</button><button class="btn" data-a="menu">Menu</button></div>`)}
 async function resume(){if(!G)return;$('#ov').hidden=true;try{await ctx.resume()}catch(e){}lastCT=-1;G.paused=false}
 function overlay(h){$('#ovc').innerHTML=h;$('#ov').hidden=false;const b=$('#ovc .primary');b&&b.focus()}
 $('#ovc').addEventListener('click',async e=>{const a=e.target.closest('[data-a]');if(!a)return;const s=G&&G.song;
@@ -616,7 +620,9 @@ function bindSet(id,fmt,key){const el=$('#'+id),o=$('#'+id+'O');el.value=S[key];
 bindSet('spd',v=>'×'+v.toFixed(2),'spd');bindSet('tmp',v=>'×'+v.toFixed(2),'tmp');bindSet('off',v=>(v>0?'+':'')+v+' ms','off');
 for(const k of ['vib','zen']){const el=$('#'+k);el.checked=!!S[k];el.addEventListener('change',()=>{S[k]=el.checked;store.set('set',S)})}
 renderDiffs();render();
-try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('sw.js').catch(()=>{})}catch(e){}
+$('#ver').textContent='v'+VERSION;
+try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});
+ navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!G&&!sessionStorage.getItem('ivr')){try{sessionStorage.setItem('ivr','1')}catch(e){}location.reload()}})}}catch(e){}
 window.__ivoire={parseMidi,buildChart,arrange,arrangeMidi,renderAudio,LIB,DIFFS,STY,seq,ensureCtx,G:()=>G};window.__now=()=>G?now():0;
 }
 </script>
