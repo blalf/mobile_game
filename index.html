@@ -164,7 +164,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.7.2';
+const VERSION='0.8.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -410,7 +410,69 @@ async function analyze(buf,prog){
   const s=(flux[i]-th)/gm;
   if(i-last<minI){if(out.length&&s>out[out.length-1].s)out.pop();else continue}
   out.push({t:+((i*hop+N*.25)/sr).toFixed(3),s:+s.toFixed(3),c:+cent[i].toFixed(1)});last=i}
- return out}
+ return{onsets:out,flux,fr}}
+/* ================= imports audio : tempo, grille, voix principale ================= */
+function beatTrack(flux,fr){
+ const n=flux.length,ps=new Float64Array(n+1);for(let i=0;i<n;i++)ps[i+1]=ps[i]+flux[i];
+ const W=Math.round(fr*.5),env=new Float32Array(n);let s2=0;
+ for(let i=0;i<n;i++){const a=Math.max(0,i-W),b=Math.min(n,i+W+1);env[i]=Math.max(0,flux[i]-(ps[b]-ps[a])/(b-a));s2+=env[i]*env[i]}
+ const sd=Math.sqrt(s2/Math.max(1,n))||1;for(let i=0;i<n;i++)env[i]/=sd;
+ let best=-1,bpm=120;
+ for(let b=70;b<=180;b+=.5){const lag=60*fr/b,li=Math.floor(lag),lf=lag-li;let ac=0;for(let i=0;i+li+1<n;i+=2)ac+=env[i]*(env[i+li]*(1-lf)+env[i+li+1]*lf);
+  const sc=ac*Math.exp(-.5*(Math.log2(b/118)/.9)**2);if(sc>best){best=sc;bpm=b}}
+ const P=60*fr/bpm,score=new Float32Array(n),prev=new Int32Array(n).fill(-1),lo=Math.round(P/2),hi=Math.round(2*P);
+ for(let t=0;t<n;t++){let bv=-1e9,bp=-1;for(let p=t-hi;p<=t-lo;p++){if(p<0)continue;const v=score[p]-100*Math.log((t-p)/P)**2;if(v>bv){bv=v;bp=p}}
+  score[t]=env[t]+(bp>=0&&bv>0?bv:0);prev[t]=bv>0?bp:-1}
+ let t=n-1,bv=-1e9;for(let i=Math.max(0,n-Math.round(P));i<n;i++)if(score[i]>bv){bv=score[i];t=i}
+ const beats=[];while(t>=0){beats.push(t);t=prev[t]}beats.reverse();return{bpm,beats,env}}
+function makeGrid(bt,fr,toT){
+ const{beats,env}=bt,n=env.length,str=f=>{let m=0;const c=Math.round(f);for(let i=Math.max(0,c-2);i<=Math.min(n-1,c+2);i++)m=Math.max(m,env[i]);return m},g=[];
+ for(let k=0;k<beats.length;k++){const b0=beats[k],b1=k+1<beats.length?beats[k+1]:b0+(k?b0-beats[k-1]:fr/2),d=b1-b0;
+  g.push({t:+toT(b0).toFixed(3),l:0,s:+str(b0).toFixed(2)});
+  if(k+1<beats.length){g.push({t:+toT(b0+d/2).toFixed(3),l:1,s:+str(b0+d/2).toFixed(2)});for(const q of[.25,.75])g.push({t:+toT(b0+d*q).toFixed(3),l:2,s:+str(b0+d*q).toFixed(2)})}}
+ return g.sort((a,b)=>a.t-b.t)}
+/* extraction de ce qui est au centre du mix (voix, lead) entre 220 Hz et 6,5 kHz */
+async function separate(buf,prog){
+ const sr=buf.sampleRate,L=buf.getChannelData(0),R=buf.numberOfChannels>1?buf.getChannelData(1):L,n=buf.length,N=2048,H=1024;
+ const w=new Float32Array(N);for(let i=0;i<N;i++)w[i]=Math.sin(Math.PI*(i+.5)/N);
+ const out=new Float32Array(n+N),re=new Float32Array(N),im=new Float32Array(N),yr=new Float32Array(N),yi=new Float32Array(N);
+ const kLo=Math.round(220/sr*N),kHi=Math.round(6500/sr*N),ramp=6;let tm=performance.now();
+ for(let o=0;o<n;o+=H){for(let i=0;i<N;i++){const j=o+i;re[i]=j<n?L[j]*w[i]:0;im[i]=j<n?R[j]*w[i]:0}fft(re,im);yr.fill(0);yi.fill(0);
+  for(let k=kLo;k<=kHi&&k<N/2;k++){const m=(N-k)%N,zr=re[k],zi=im[k],wr=re[m],wi=-im[m],Lr=(zr+wr)/2,Li=(zi+wi)/2,Rr=(zi-wi)/2,Ri=-(zr-wr)/2;
+   const Mr=(Lr+Rr)/2,Mi=(Li+Ri)/2,Sr=(Lr-Rr)/2,Si=(Li-Ri)/2,mm=Math.hypot(Mr,Mi),ss=Math.hypot(Sr,Si),c=mm/(mm+ss+1e-9);
+   let mk=c<=.5?0:((c-.5)*2)**2;mk*=Math.min(1,(k-kLo)/ramp,(kHi-k)/ramp);
+   yr[k]=Mr*mk;yi[k]=-(Mi*mk);yr[m]=Mr*mk;yi[m]=Mi*mk}
+  fft(yr,yi);for(let i=0;i<N;i++)out[o+i]+=yr[i]/N*w[i];
+  if(performance.now()-tm>40){prog&&prog(o/n);await new Promise(r=>setTimeout(r,0));tm=performance.now()}}
+ return out.subarray(0,n)}
+async function analyzeAudio(buf,title){
+ const a=await analyze(buf,p=>busy('Analyse du rythme…',title,p*.4));
+ busy('Détection du tempo…',title,.42);await new Promise(r=>setTimeout(r,0));
+ const bt=beatTrack(a.flux,a.fr),grid=makeGrid(bt,a.fr,f=>(f*512+1024*.25)/buf.sampleRate);
+ const lead=await separate(buf,p=>busy('Isolation de la mélodie…',title,.45+p*.53)),half=new Int16Array(Math.ceil(lead.length/2));
+ for(let i=0;i<half.length;i++)half[i]=Math.max(-32767,Math.min(32767,Math.round(lead[i*2]*32767)));
+ return{onsets:a.onsets,grid,bpm:bt.bpm,lead:half.buffer,ana:2}}
+async function prepareAudio(song){
+ const k='a2|'+song.id;if(cache.has(k))return cache.get(k);
+ const rec=await DB.rec(song.id);if(!rec||!rec.data)throw new Error('Fichier introuvable, réimporte-le');
+ const buf=await ctx.decodeAudioData(rec.data.slice(0));
+ if(!rec.lead||!song.grid){const r=await analyzeAudio(buf,song.title);song.grid=r.grid;song.bpm=r.bpm;song.ana=2;rec.lead=r.lead;
+  const meta={...song};delete meta.kind_;await DB.put(meta,{data:rec.data,lead:r.lead})}
+ const h=new Int16Array(rec.lead),n=buf.length,lead=ctx.createBuffer(1,n,buf.sampleRate),ld=lead.getChannelData(0),rest=ctx.createBuffer(2,n,buf.sampleRate);
+ for(let i=0;i<n;i++){const p=i/2,a=Math.floor(p),f=p-a,x=((h[a]||0)*(1-f)+(h[a+1]||0)*f)/32767;ld[i]=x}
+ for(let c=0;c<2;c++){const src=buf.getChannelData(Math.min(c,buf.numberOfChannels-1)),d=rest.getChannelData(c);for(let i=0;i<n;i++)d[i]=src[i]-ld[i]}
+ const r={rest,lead};remember(k,r);return r}
+const AKEEP={facile:[.6,0,0],normal:[.9,.3,0],avance:[1,.55,.1],difficile:[1,.75,.3],expert:[1,.9,.5],maitre:[1,1,.75]};
+function gridChart(song,D,rng){
+ const keep=AKEEP[diffKey]||AKEEP.normal,cand=[];
+ for(let l=0;l<3;l++){const pts=song.grid.filter(p=>p.l===l&&p.s>.15).sort((a,b)=>b.s-a.s);cand.push(...pts.slice(0,Math.round(pts.length*keep[l])))}
+ cand.sort((a,b)=>a.l-b.l||b.s-a.s);const gap=D.gap*1.1,cell=new Map(),acc=[];
+ for(const o of cand){const k=Math.floor(o.t/gap);let ok=true;for(let c=k-1;c<=k+1&&ok;c++)for(const t of cell.get(c)||[])if(Math.abs(t-o.t)<gap-1e-3){ok=false;break}
+  if(ok){acc.push(o);(cell.get(k)||cell.set(k,[]).get(k)).push(o.t)}}
+ const s0=song.grid.filter(p=>p.l===0).map(p=>p.s).sort((a,b)=>b-a),strong=s0[Math.floor(s0.length*.15)]??1e9;
+ return acc.sort((a,b)=>a.t-b.t).map(o=>({t:o.t,d:0,merged:0,ns:[],dbl:o.l===0&&o.s>=strong&&rng()<D.dbl?-1:null}))}
+
+
 
 /* ================= MIDI ================= */
 function parseMidi(ab){
@@ -448,8 +510,9 @@ const DB={db:null,ok:'indexedDB' in window,mem:{meta:[],blob:{}},
   r.onsuccess=()=>res(this.db=r.result);r.onerror=()=>rej(r.error)})},
  async run(st,mode,fn){const db=await this.open();return new Promise((res,rej)=>{const t=db.transaction(st,mode),r=fn(t.objectStore(st));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error)})},
  async all(){try{return await this.run('meta','readonly',s=>s.getAll())}catch(e){this.ok=false;return this.mem.meta}},
- async put(meta,blob){try{await this.run('meta','readwrite',s=>s.put(meta));if(blob)await this.run('blob','readwrite',s=>s.put({id:meta.id,data:blob}))}
+ async put(meta,blob){try{await this.run('meta','readwrite',s=>s.put(meta));if(blob)await this.run('blob','readwrite',s=>s.put(blob instanceof ArrayBuffer?{id:meta.id,data:blob}:{id:meta.id,...blob}))}
   catch(e){this.ok=false;this.mem.meta=this.mem.meta.filter(m=>m.id!==meta.id).concat(meta);if(blob)this.mem.blob[meta.id]=blob}},
+ async rec(id){if(this.mem.blob[id])return{data:this.mem.blob[id]};try{return await this.run('blob','readonly',s=>s.get(id))}catch(e){return null}},
  async blob(id){if(this.mem.blob[id])return this.mem.blob[id];const r=await this.run('blob','readonly',s=>s.get(id));return r&&r.data},
  async del(id){this.mem.meta=this.mem.meta.filter(m=>m.id!==id);delete this.mem.blob[id];try{await this.run('meta','readwrite',s=>s.delete(id));await this.run('blob','readwrite',s=>s.delete(id))}catch(e){}}};
 let imported=[];const cache=new Map();
@@ -472,7 +535,8 @@ function lanes(tiles,rng){const out=[];let prev=[],mode='rnd',left=0,dir=1,tr=nu
  return out}
 function buildChart(song,D,look,mel,extra){
  const rng=rngOf(hash(song.id+'|'+diffKey));let tiles;
- if(song.kind==='audio'){const gap=D.gap*1.25,cell=new Map(),acc=[];
+ if(song.kind==='audio'&&song.grid)tiles=gridChart(song,D,rng);
+ else if(song.kind==='audio'){const gap=D.gap*1.25,cell=new Map(),acc=[];
   for(const o of [...song.onsets].sort((a,b)=>b.s-a.s)){const k=Math.floor(o.t/gap);let ok=true;
    for(let c=k-1;c<=k+1&&ok;c++)for(const t of cell.get(c)||[])if(Math.abs(t-o.t)<gap){ok=false;break}
    if(ok){acc.push(o);(cell.get(k)||cell.set(k,[]).get(k)).push(o.t)}}
@@ -505,8 +569,8 @@ let starting=false;
 async function start(song){
  if(starting)return;starting=true;
  try{ensureCtx();try{await ctx.resume()}catch(e){}
-  const D=DIFFS[diffKey],look=D.look/S.spd;let acc,nbuf=null,notes=null,extras=null,beats=[],shift=0;
-  if(song.kind==='audio'){busy('Chargement…',song.title,0);acc=await audioBuf(song)}
+  const D=DIFFS[diffKey],look=D.look/S.spd;let acc,nbuf=null,notes=null,extras=null,beats=[],lead=null;
+  if(song.kind==='audio'){busy('Chargement…',song.title,0);const r=await prepareAudio(song);acc=r.rest;lead=r.lead;beats=song.grid.filter(p=>p.l===0).map(p=>p.t)}
   else{const tm=D.tempo*S.tmp,k=song.id+'|'+tm.toFixed(3);let r=cache.get(k);
    if(!r){busy('Préparation du morceau…',song.title,0);const arr=song.kind==='midi'?arrangeMidi(song,tm):arrange(song,tm);
     const b=await renderAudio(arr,p=>busy('Préparation du morceau…',song.title,p));r={...b,arr};remember(k,r)}
@@ -515,14 +579,14 @@ async function start(song){
   const ch=buildChart(song,D,look,notes,extras);if(!ch.tiles.length){toast('Pas assez de notes pour faire des tuiles');return}
   stopGame();$('#home').hidden=true;$('#game').hidden=false;$('#ov').hidden=true;resize();
   const bus=ctx.createGain();bus.connect(master);const mg=ctx.createGain();mg.connect(melBus);
-  const lead=look+1,t0=ctxNow()+lead;
+  const t0=ctxNow()+look+1,lg=ctx.createGain();lg.connect(melBus);
   G={song,D,look,...ch,bus,mg,beats,bi:0,lo:0,dlo:0,score:0,combo:0,maxC:0,lives:S.zen?Infinity:D.lives,cnt:[0,0,0,0],live:true,paused:false,pt:0,
-   start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};
-  for(const [b,dst] of [[acc,bus]])if(b){const s=ctx.createBufferSource();s.buffer=b;s.connect(dst);s.start(t0);G.srcs.push(s)}
+   start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),lg:lead?lg:null,vs:lead?-(ctx.outputLatency||ctx.baseLatency||0):.03,off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};if(G.lg)G.lg.gain.value=1;
+  for(const [b,dst] of [[acc,bus],[lead,lg]])if(b){const s=ctx.createBufferSource();s.buffer=b;s.connect(dst);s.start(t0);G.srcs.push(s)}
   hud(true);cancelAnimationFrame(raf);raf=requestAnimationFrame(frame)}
  catch(e){busy();toast((e&&e.message)||'Impossible de lancer ce morceau')}
  finally{starting=false}}
-const now=()=>ctxNow()-G.start-G.lat-G.off;
+const now=()=>ctxNow()-G.start+G.vs-G.off;
 function stopGame(){if(!G)return;G.live=false;const b=G.bus,m=G.mg,srcs=G.srcs;try{b.gain.setTargetAtTime(0,ctx.currentTime,.08);m.gain.setTargetAtTime(0,ctx.currentTime,.08)}catch(e){}setTimeout(()=>{srcs.forEach(s=>{try{s.stop()}catch(e){}});try{b.disconnect();m.disconnect()}catch(e){}},500);cancelAnimationFrame(raf)}
 function hud(full){$('#score').textContent=fmtN(G.score);$('#combo').textContent=G.combo>=5?G.combo+' combo':'';
  if(full||G._lv!==G.lives){G._lv=G.lives;$('#lives').innerHTML=S.zen?'':Array.from({length:G.D.lives},(_,i)=>`<i class="${i<G.lives?'':'x'}"></i>`).join('')}}
@@ -537,26 +601,27 @@ function down(lane,id){if(!G||!G.live||G.paused)return;const t=now(),w=G.D.win,{
  G.flash[lane]={t0:t};if(G.D.wrong&&!S.zen)lose(null,t)}
 function up(id){if(!G)return;const l=G.ids.get(id);if(l!=null){G.press[l]=Math.max(0,G.press[l]-1);G.ids.delete(id)}for(const [x,pid] of G.holds)if(pid===id)endHold(x,now(),false)}
 /* les notes sont programmées un peu en avance pour sonner pile sur le temps malgré la latence audio du téléphone ; coupées si la tuile est ratée */
-function arm(x){if(x.armed||!G.nbuf||!x.ns)return;x.armed=true;const tc=ctx.currentTime,g=ctx.createGain();g.connect(G.mg);x.g=g;
+function arm(x){if(x.armed||!G.nbuf||!x.ns)return;x.armed=true;const tc=ctx.currentTime,g=ctx.createGain();g.gain.value=0;g.connect(G.mg);x.g=g;
  for(const n of x.ns){const b=G.nbuf[n.i];if(!b)continue;const T=G.start+x.t+n.dt,lag=tc-T;if(lag>=b.duration-.05)continue;const s=ctx.createBufferSource();s.buffer=b;s.connect(g);if(lag>0)s.start(tc,lag);else s.start(T)}}
 function cut(x){if(!x.g)return;const tc=ctx.currentTime;try{x.g.gain.cancelScheduledValues(tc);x.g.gain.setTargetAtTime(0,tc,.012)}catch(e){}}
 function hit(x,t,id){const err=Math.abs(t-x.t),w=G.D.win,gr=err<w*.45?0:err<w?1:2;
  x.res='hit';x.ht=t;G.lastHit[x.lane]=t;G.cnt[gr]++;G.combo++;G.maxC=Math.max(G.maxC,G.combo);
  G.score+=[300,200,100][gr]*(1+Math.min(G.combo,100)/100);
  G.pops.push({lane:x.lane,t0:t,txt:['Parfait','Super','Bien'][gr],c:gr?'#121014':'#ff5a4e'});
- G.arm=true;if(!x.armed)arm(x);else if(x.g&&!x.cutd){const tc=ctx.currentTime;x.g.gain.cancelScheduledValues(tc);x.g.gain.setValueAtTime(1,tc)}
+ if(G.lg){const tc=ctx.currentTime;G.lg.gain.cancelScheduledValues(tc);G.lg.gain.setTargetAtTime(1,tc,.01)}
+ if(G.nbuf){if(!x.armed)arm(x);const tc=ctx.currentTime;if(x.g&&!x.cutd&&tc<=G.start+x.t+.06){x.g.gain.cancelScheduledValues(tc);x.g.gain.setValueAtTime(1,tc)}else x.cutd=1}
  if(x.hd){x.holding=true;G.holds.set(x,id)}hud()}
 function endHold(x,t,full){if(!x.holding)return;x.holding=false;G.holds.delete(x);if(!full&&x.g)try{x.g.gain.cancelScheduledValues(ctx.currentTime);x.g.gain.setTargetAtTime(0,ctx.currentTime,.06)}catch(e){}
  const p=full?1:Math.max(0,Math.min(1,(t-x.t)/x.hd));x.hp=p;G.score+=Math.round(p*x.hd*250);
  if(p>.9)G.pops.push({lane:x.lane,t0:t,txt:'Tenu',c:'#ff5a4e'});hud()}
-function lose(x,t){if(x){x.res='miss';x.mt=t;G.cnt[3]++;cut(x);G.arm=false;G.flash[x.lane]={t0:t};melDip()}G.combo=0;
+function lose(x,t){if(x){x.res='miss';x.mt=t;G.cnt[3]++;cut(x);if(G.lg){const tc=ctx.currentTime;G.lg.gain.cancelScheduledValues(tc);G.lg.gain.setTargetAtTime(0,tc,.04)}G.flash[x.lane]={t0:t};melDip()}G.combo=0;
  if(S.vib)try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}
  if(G.lives!==Infinity){G.lives--;if(G.lives<=0){G.live=false;G.failT=t;try{G.bus.gain.setTargetAtTime(0,ctx.currentTime,.25);G.mg.gain.setTargetAtTime(0,ctx.currentTime,.25)}catch(e){}setTimeout(()=>result(false),1100)}}hud()}
 function update(t){const w=G.D.win,T=G.tiles,{H,ly,pps}=geo(),late=Math.max(w*1.3,(H-ly)/pps*.85);
  for(let j=G.lo;j<T.length;j++){const x=T[j];if(x.t>t-late)break;if(!x.res){lose(x,t);if(!G.live)return}}
  while(G.lo<T.length&&T[G.lo].res)G.lo++;
  for(let j=G.lo;j<T.length;j++){const x=T[j];if(x.t>t-w*1.2)break;if(x.armed&&!x.res&&!x.cutd){x.cutd=1;cut(x)}}
- if(G.arm&&G.nbuf){const ahead=ctx.currentTime+.35;for(let j=G.lo;j<T.length;j++){const x=T[j];if(G.start+x.t>ahead)break;if(!x.res&&!x.armed)arm(x)}}
+ if(G.nbuf){const ahead=ctx.currentTime+.35;for(let j=G.lo;j<T.length;j++){const x=T[j];if(G.start+x.t>ahead)break;if(!x.res&&!x.armed)arm(x)}}
  for(const x of [...G.holds.keys()])if(t>=x.t+x.hd)endHold(x,t,true);
  $('#prog').style.width=Math.max(0,Math.min(100,t/G.dur*100))+'%';
  if(G.lo>=T.length&&!G.holds.size&&t>Math.max(G.end+1,G.dur)){G.live=false;stopGame();result(true)}}
@@ -625,9 +690,9 @@ $('#file').addEventListener('change',async e=>{const files=[...e.target.files];e
   try{const ab=await f.arrayBuffer();
    if(/\.midi?$/i.test(f.name)||/midi/.test(f.type)){const m=parseMidi(ab);await DB.put({id,title,kind:'midi',notes:m.notes,bpm:m.bpm,dur:Math.max(...m.notes.map(x=>x.t+x.d)),added:Date.now()});toast('« '+title+' » ajouté')}
    else{busy('Analyse du rythme…',title,0);const buf=await ctx.decodeAudioData(ab.slice(0));
-    const onsets=await analyze(buf,p=>busy('Analyse du rythme…',title,p));busy();
-    if(onsets.length<8)throw new Error('Rythme introuvable dans ce fichier');
-    await DB.put({id,title,kind:'audio',onsets,dur:buf.duration,added:Date.now()},ab);remember('a|'+id,buf);toast('« '+title+' » ajouté')}}
+    const r=await analyzeAudio(buf,title);busy();
+    if(r.grid.length<16)throw new Error('Rythme introuvable dans ce fichier');
+    await DB.put({id,title,kind:'audio',onsets:r.onsets,grid:r.grid,bpm:r.bpm,ana:2,dur:buf.duration,added:Date.now()},{data:ab,lead:r.lead});toast('« '+title+' » ajouté, '+Math.round(r.bpm)+' BPM')}}
   catch(err){busy();toast((err&&err.message&&err.message.length<80?err.message:'Impossible de lire ce fichier')+' ('+f.name+')')}}
  if(!DB.ok)toast('Stockage indisponible ici : les imports dureront jusqu\'à la fermeture');
  render()});
