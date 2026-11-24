@@ -42,6 +42,9 @@ h2{font-size:22px;margin:30px 0 10px;font-weight:700}
 .list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .song{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;text-align:left;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:var(--bg2);cursor:pointer;min-height:64px}
 .song:active{transform:scale(.99)}
+.song{position:relative;overflow:hidden}.pbar{position:absolute;left:0;bottom:0;height:4px;background:var(--acc);opacity:.85}.pbar.full{background:var(--ivory);opacity:.5}
+.new{display:inline-block;border:1px solid var(--acc);color:var(--acc);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600}
+.pct{color:var(--ivory);font-size:15px}
 .key{width:44px;height:44px;border-radius:9px;background:var(--ivory);position:relative;overflow:hidden}
 .key i{position:absolute;top:0;width:12px;height:26px;background:#121014;border-radius:0 0 3px 3px}
 .key.imp-k{background:var(--acc)}
@@ -130,7 +133,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
     </label>
     <input type="file" id="file" accept=".mid,.midi,audio/*,.mp3,.m4a,.ogg,.wav,.flac,.opus" multiple hidden>
   </div>
-  <p class="hint">MIDI : chaque tuile joue les vraies notes du morceau. Audio (MP3, M4A, OGG, WAV…) : la musique tourne et les tuiles suivent le rythme détecté.</p>
+  <p class="hint">MIDI : chaque tuile joue les vraies notes du morceau. Audio (MP3, M4A, OGG, WAV…) : les tuiles suivent les temps du morceau et la voix ou l'instrument principal ne sonne que si tu enchaînes.</p>
 
   <h2>Morceaux</h2>
   <ul class="list" id="list"></ul>
@@ -164,7 +167,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.8.0';
+const VERSION='0.9.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -521,16 +524,23 @@ const remember=(k,v)=>{cache.set(k,v);while(cache.size>2)cache.delete(cache.keys
 /* ================= tuiles ================= */
 const hash=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0};
 const rngOf=seed=>()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
-function lanes(tiles,rng){const out=[];let prev=[],mode='rnd',left=0,dir=1,tr=null,last=Math.floor(rng()*4);
- for(const x of tiles){if(left--<=0){mode=['rnd','stairs','trill','jump','rnd','stairs'][Math.floor(rng()*6)];left=3+Math.floor(rng()*6);dir=rng()<.5?-1:1;tr=null}
-  const ok=l=>!prev.includes(l);let L;
+const SIDE=l=>l<2?0:1;
+/* pouce gauche = colonnes 0-1, pouce droit = 2-3 : deux tuiles à tenir ou taper en même temps ne tombent jamais du même côté */
+function lanes(tiles,rng,minH){const out=[];let prev=[],mode='rnd',left=0,dir=1,tr=null,last=Math.floor(rng()*4),act=[],pc=0;
+ for(const x of tiles){act=act.filter(h=>h.t+h.hd>x.t-.02);
+  if(act.length>1){const h=act.reduce((a,b)=>a.t+a.hd<b.t+b.hd?a:b);h.hd=Math.max(0,x.t-.08-h.t);if(h.hd<minH)h.hd=0;act=act.filter(q=>q!==h)}
+  const busy=new Set(act.map(h=>SIDE(h.lane)));if(busy.size&&x.dbl!=null)x.dbl=null;
+  if(left--<=0){mode=['rnd','stairs','trill','jump','rnd','stairs'][Math.floor(rng()*6)];left=3+Math.floor(rng()*6);dir=rng()<.5?-1:1;tr=null}
+  const free=l=>!busy.has(SIDE(l))&&!act.some(h=>h.lane===l),ok=l=>!prev.includes(l)&&free(l);let L;
   if(mode==='stairs'){L=last+dir;if(L<0||L>3){dir=-dir;L=last+dir}}
   else if(mode==='trill'){if(!tr){const o=[0,1,2,3].filter(l=>l!==last);tr=[last,o[Math.floor(rng()*3)]]}L=tr[0]===last?tr[1]:tr[0]}
   else if(mode==='jump')L=last<2?2+Math.floor(rng()*2):Math.floor(rng()*2);
   else L=Math.floor(rng()*4);
-  if(!ok(L)){const c=[0,1,2,3].filter(ok);L=c[Math.floor(rng()*c.length)]}
+  if(!ok(L)){let c=[0,1,2,3].filter(ok);if(!c.length)c=[0,1,2,3].filter(free);if(!c.length)c=[0,1,2,3];L=c[Math.floor(rng()*c.length)]}
   x.lane=L;out.push(x);const cur=[L];
-  if(x.dbl!=null){const c=[0,1,2,3].filter(l=>l!==L&&ok(l));if(c.length){const y={t:x.t,d:0,merged:1,ns:x.dbl>=0?[{i:x.dbl,dt:0}]:[],lane:c[Math.floor(rng()*c.length)],twin:1};x.merged=Math.max(x.merged||0,1);out.push(y);cur.push(y.lane)}}
+  if(x.dbl!=null){let c=[0,1,2,3].filter(l=>SIDE(l)!==SIDE(L)&&!prev.includes(l));if(!c.length)c=[0,1,2,3].filter(l=>SIDE(l)!==SIDE(L));
+   const y={t:x.t,d:0,hd:0,merged:1,ns:x.dbl>=0?[{i:x.dbl,dt:0}]:[],lane:c[Math.floor(rng()*c.length)],twin:1,pc};x.pc=pc++;x.merged=Math.max(x.merged||0,1);x.hd=0;out.push(y);cur.push(y.lane)}
+  if(x.hd>0)act.push(x);
   prev=cur;last=L}
  return out}
 function buildChart(song,D,look,mel,extra){
@@ -551,16 +561,15 @@ function buildChart(song,D,look,mel,extra){
   for(const x of tiles)if(!x.fill&&!x.merged&&hOf.has(x.main)&&rng()<D.dbl)x.dbl=hOf.get(x.main)}
  const gs=tiles.slice(1).map((x,i)=>x.t-tiles[i].t).sort((a,b)=>a-b),med=gs.length?gs[gs.length>>1]:1,gm=gs.length?gs[0]:1;
  const tileS=Math.max(look*.1,Math.min(Math.max(gm,.06)*1.85,look*.27));
- tiles=lanes(tiles,rng);const nextIn=[1e9,1e9,1e9,1e9];
- for(let i=tiles.length-1;i>=0;i--){const x=tiles[i];x.hd=0;
-  if(D.hold&&song.kind!=='audio'&&!x.merged&&!x.fill&&x.d>=Math.max(tileS*1.6,med*1.6)){const hd=Math.min(x.d*.95,nextIn[x.lane]-x.t-.06);if(hd>=tileS*1.4)x.hd=hd}
-  nextIn[x.lane]=x.t}
+ for(const x of tiles)x.hd=D.hold&&song.kind!=='audio'&&!x.merged&&!x.fill&&x.dbl==null&&x.d>=Math.max(tileS*1.6,med*1.6)?Math.min(x.d*.95,4):0;
+ tiles=lanes(tiles,rng,tileS*1.4);
  const lt=tiles.reduce((a,x)=>Math.max(a,x.t+x.hd),0);return{tiles,tileS,end:lt}}
 
 /* ================= jeu ================= */
 const cv=$('#cv'),cx=cv.getContext('2d',{alpha:false});let G=null,raf=0,dpr=1;
 function resize(){dpr=Math.min(window.devicePixelRatio||1,2.5);cv.width=Math.round(cv.clientWidth*dpr);cv.height=Math.round(cv.clientHeight*dpr)}
 window.addEventListener('resize',()=>{if(G)resize()});
+const PAIR=[['#5b8ee6','#2a4f9c'],['#3fb5a5','#1c6b62'],['#9a7be6','#55399e'],['#e07aa6','#97355f']];
 const rr=(x,y,w,h,r)=>{cx.beginPath();if(cx.roundRect)cx.roundRect(x,y,w,Math.max(0,h),r);else cx.rect(x,y,w,Math.max(0,h))};
 async function audioBuf(song){const k='a|'+song.id;if(cache.has(k))return cache.get(k);const ab=await DB.blob(song.id);if(!ab)throw new Error('Fichier introuvable, réimporte-le');
  const b=await ctx.decodeAudioData(ab.slice(0));remember(k,b);return b}
@@ -640,7 +649,7 @@ function draw(t){const W=cv.width,{H,ly,pps}=geo(),lw=W/4,pad=2*dpr,T=G.tiles;
  for(let j=G.dlo;j<T.length;j++){const x=T[j],yb=ly-(x.t-t)*pps+off;if(yb<0)break;const h=(x.hd||G.tileS)*pps,yt=yb-h,x0=x.lane*lw+pad,w=lw-pad*2;if(yt>H)continue;
   if(x.res==='hit'&&!x.hd){const a=Math.max(0,1-(t-x.ht)/.25);cx.fillStyle=`rgba(18,16,20,${.12+a*.5})`;rr(x0,yt,w,h-pad,6*dpr);cx.fill();continue}
   if(x.res==='miss'){cx.fillStyle=(Math.floor((t-x.mt)*8)%2)?'#e5483b':'#121014';rr(x0,yt,w,h-pad,6*dpr);cx.fill();continue}
-  const g=cx.createLinearGradient(0,yt,0,yb);g.addColorStop(0,'#2b2730');g.addColorStop(1,'#0c0b0e');
+  const g=cx.createLinearGradient(0,yt,0,yb),pal=x.pc!=null?PAIR[x.pc%PAIR.length]:['#2b2730','#0c0b0e'];g.addColorStop(0,pal[0]);g.addColorStop(1,pal[1]);
   cx.fillStyle=x.res==='hit'&&!x.holding?'rgba(18,16,20,.22)':g;rr(x0,yt,w,h-pad,6*dpr);cx.fill();
   if(x.hd){cx.fillStyle='rgba(243,239,230,.35)';cx.fillRect(x0+w/2-dpr,yt+10*dpr,2*dpr,Math.max(0,h-24*dpr));
    if(x.res==='hit'){const top=x.holding?Math.max(yt,ly):yb-h*(x.hp||0);cx.fillStyle='#ff5a4e';rr(x0,top,w,yb-top-pad,6*dpr);cx.fill()}
@@ -676,8 +685,8 @@ function menu(){stopGame();try{ctx.resume()}catch(e){}G=null;$('#ov').hidden=tru
 const starsHTML=n=>'<span class="stars">'+[0,1,2].map(i=>i<n?'★':'<span class="off">★</span>').join('')+'</span>';
 function result(done){if(!G)return;stopGame();const c=G.cnt,tot=G.tiles.length,acc=(c[0]+c[1]*.7+c[2]*.4)/tot,stars=done?(acc>=.93?3:acc>=.8?2:acc>=.55?1:0):0;
  const key=G.song.id+'|'+diffKey,best=store.get('best',{}),old=best[key]||{s:0,st:0},rec=G.score>old.s;
- best[key]={s:Math.max(old.s,Math.round(G.score)),st:Math.max(old.st,stars)};store.set('best',best);
  const pct=Math.round(Math.min(1,Math.max(0,G.failT??G.end)/Math.max(.01,G.end))*100);
+ best[key]={s:Math.max(old.s,Math.round(G.score)),st:Math.max(old.st,stars),p:Math.max(old.p||(old.st?100:0),done?100:pct),d:!!(old.d||old.st||done)};store.set('best',best);
  overlay(`<h3>${done?'Morceau terminé':'Raté'}</h3><p class="hint" style="text-align:center;margin:0">${esc(G.song.title)} · ${DIFFS[diffKey].name}${done?'':' · '+pct+' % joué'}</p>
  ${starsHTML(stars)}<div class="big">${fmtN(G.score)}</div><p class="hint" style="text-align:center;margin:0">${rec?'Nouveau record':'Record : '+fmtN(old.s)} · combo max ${G.maxC} · précision ${Math.round(acc*100)} %</p>
  <div class="grid4"><div><b>${c[0]}</b><span>Parfait</span></div><div><b>${c[1]}</b><span>Super</span></div><div><b>${c[2]}</b><span>Bien</span></div><div><b>${c[3]}</b><span>Ratés</span></div></div>
@@ -703,8 +712,10 @@ $('#diffs').addEventListener('click',e=>{const b=e.target.closest('[data-d]');if
 const keyArt=(id,imp)=>{const r=rngOf(hash(id));return`<span class="key${imp?' imp-k':''}">${[0,1,2].filter(()=>r()<.7).map(i=>`<i style="left:${4+i*14}px"></i>`).join('')}</span>`};
 LIB.forEach(s=>{s.kind='lib';let d=0;for(const x of s.sec){const m=seq(x.mel,x.mul||1),c=seq(x.ch,x.mul||1);d+=Math.max(m.len,c.len)*60/(x.bpm||s.bpm)}s.dur=d});
 async function render(){imported=(await DB.all()).sort((a,b)=>b.added-a.added);const best=store.get('best',{});
+ const status=b=>{if(!b||!b.s)return`<span class="rec"><span class="new">Nouveau</span></span>`;const done=b.d||b.st>0,p=done?100:(b.p||0);
+  return`<span class="rec">${done?starsHTML(b.st)+'<br>'+fmtN(b.s):`<b class="pct">${p?p+' %':'Commencé'}</b><br>pas fini`}</span><i class="pbar${done?' full':''}" style="width:${p}%"></i>`};
  const row=(s,imp)=>{const b=best[s.id+'|'+diffKey];const sub=imp?(s.kind==='midi'?'MIDI importé':'Audio importé')+' · '+fmtT(s.dur):esc(s.by)+' · '+fmtT(s.dur);
-  return`<li class="li"><button class="song" data-id="${esc(s.id)}">${keyArt(s.id,imp)}<span><div class="st">${esc(s.title)}</div><div class="sub">${sub}</div></span><span class="rec">${starsHTML(b?b.st:0)}<br>${b?fmtN(b.s):'Pas joué'}</span></button>${imp?`<button class="del" data-del="${esc(s.id)}" aria-label="Supprimer ${esc(s.title)}">✕</button>`:''}</li>`};
+  return`<li class="li"><button class="song" data-id="${esc(s.id)}">${keyArt(s.id,imp)}<span><div class="st">${esc(s.title)}</div><div class="sub">${sub}</div></span>${status(b)}</button>${imp?`<button class="del" data-del="${esc(s.id)}" aria-label="Supprimer ${esc(s.title)}">✕</button>`:''}</li>`};
  $('#list').innerHTML=(imported.length?imported.map(s=>row(s,true)).join(''):'')+LIB.map(s=>row(s,false)).join('')}
 $('#list').addEventListener('click',async e=>{const d=e.target.closest('[data-del]');
  if(d){if(d.classList.contains('armed')){await DB.del(d.dataset.del);render()}else{d.classList.add('armed');d.textContent='Supprimer';setTimeout(()=>{if(d.isConnected){d.classList.remove('armed');d.textContent='✕'}},3000)}return}
