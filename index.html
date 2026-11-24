@@ -167,7 +167,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.9.0';
+const VERSION='0.9.1';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -569,7 +569,7 @@ function buildChart(song,D,look,mel,extra){
 const cv=$('#cv'),cx=cv.getContext('2d',{alpha:false});let G=null,raf=0,dpr=1;
 function resize(){dpr=Math.min(window.devicePixelRatio||1,2.5);cv.width=Math.round(cv.clientWidth*dpr);cv.height=Math.round(cv.clientHeight*dpr)}
 window.addEventListener('resize',()=>{if(G)resize()});
-const PAIR=[['#5b8ee6','#2a4f9c'],['#3fb5a5','#1c6b62'],['#9a7be6','#55399e'],['#e07aa6','#97355f']];
+const PAIR=[['#7f98bd','#56708f'],['#7aaba2','#52807a'],['#9d93bb','#6f668f'],['#bb93a5','#8d6778']];
 const rr=(x,y,w,h,r)=>{cx.beginPath();if(cx.roundRect)cx.roundRect(x,y,w,Math.max(0,h),r);else cx.rect(x,y,w,Math.max(0,h))};
 async function audioBuf(song){const k='a|'+song.id;if(cache.has(k))return cache.get(k);const ab=await DB.blob(song.id);if(!ab)throw new Error('Fichier introuvable, réimporte-le');
  const b=await ctx.decodeAudioData(ab.slice(0));remember(k,b);return b}
