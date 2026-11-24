@@ -175,7 +175,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.14.0';
+const VERSION='0.14.1';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -515,13 +515,18 @@ function ensureCtx(){if(ctx)return ctx;const AC=window.AudioContext||window.webk
  const cv=ctx.createConvolver();cv.buffer=ir;const wet=ctx.createGain();wet.gain.value=.35;cv.connect(wet);wet.connect(master);
  melBus=ctx.createGain();melBus.connect(master);melBus.connect(cv);return ctx}
 let lastCT=-1,lastPT=0;
-const clk={o:null,lat:null,last:0};
-/* temps audio réellement entendu (getOutputTimestamp), lissé ; latence = avance du moteur sur le haut-parleur */
-function heardNow(){const pt=performance.now()/1000;let ts=null;try{ts=ctx.getOutputTimestamp?ctx.getOutputTimestamp():null}catch(e){}
- if(ts&&ts.contextTime>0&&ts.performanceTime>0&&ctx.state==='running'){const o=ts.contextTime-ts.performanceTime/1000;clk.o=clk.o==null||Math.abs(o-clk.o)>.25?o:clk.o+.06*(o-clk.o);
-  const l=ctx.currentTime-(pt+clk.o);clk.lat=clk.lat==null?l:clk.lat+.04*(l-clk.lat)}
- const v=clk.o==null?ctxNow()-(ctx.outputLatency||ctx.baseLatency||0):pt+clk.o;clk.last=Math.max(clk.last,v);return clk.last}
-const latNow=()=>clk.lat!=null?Math.max(0,Math.min(.4,clk.lat)):(ctx.outputLatency||ctx.baseLatency||0);
+const clk={off:null,ct:-1,lat:null,n:0,last:0};
+/* horloge d'affichage : ancrée en continu sur ctx.currentTime (l'horloge du son, donc pas de dérive),
+   lissée entre deux blocs audio avec performance.now ; latence de sortie mesurée au début puis figée */
+function audioNow(){const pt=performance.now()/1000,ct=ctx.currentTime;
+ if(ctx.state!=='running')return Math.max(clk.last,ct);
+ if(clk.off==null){clk.off=ct-pt;clk.ct=ct}
+ else if(ct!==clk.ct){const err=ct-(pt+clk.off);clk.off+=Math.abs(err)>.2?err:err*.15;clk.ct=ct}
+ const v=Math.max(clk.last,pt+clk.off);clk.last=v;
+ if(clk.n<180){clk.n++;let l=null;try{const ts=ctx.getOutputTimestamp&&ctx.getOutputTimestamp();if(ts&&ts.contextTime>0&&ts.performanceTime>0)l=v-(ts.contextTime+(pt-ts.performanceTime/1000))}catch(e){}
+  if(l!=null&&l>=0&&l<.5)clk.lat=clk.lat==null?l:clk.lat+.05*(l-clk.lat)}
+ return v}
+const latNow=()=>clk.lat!=null?clk.lat:Math.min(.5,ctx.outputLatency||ctx.baseLatency||0);
 function ctxNow(){const ct=ctx.currentTime,pt=performance.now()/1000;if(ct!==lastCT){lastCT=ct;lastPT=pt}return ct+(ctx.state==='running'?Math.min(pt-lastPT,.04):0)}
 
 /* ================= détection de rythme (imports audio) ================= */
@@ -746,14 +751,14 @@ async function start(song){
   const ch=buildChart(song,D,look,notes,extras);if(!ch.tiles.length){toast('Pas assez de notes pour faire des tuiles');return}
   stopGame();$('#home').hidden=true;$('#game').hidden=false;$('#ov').hidden=true;resize();
   const bus=ctx.createGain();bus.connect(master);const mg=ctx.createGain();mg.connect(melBus);
-  clk.o=null;clk.lat=null;clk.last=0;const t0=ctxNow()+look+1,lg=ctx.createGain();lg.connect(melBus);
+  clk.off=null;clk.lat=null;clk.n=0;clk.last=0;const t0=ctxNow()+look+1,lg=ctx.createGain();lg.connect(melBus);
   G={song,D,look,...ch,bus,mg,beats,bi:0,lo:0,dlo:0,score:0,combo:0,maxC:0,lives:S.zen||song.kind==='calib'?Infinity:D.lives,cnt:[0,0,0,0],live:true,paused:false,pt:0,
    start:t0,lat:(ctx.outputLatency||ctx.baseLatency||0),lg:lead?lg:null,useLat:!lead,lead:lead?0:song.kind==='calib'?0:S.vis+.02,errs:[],off:S.off/1000,press:[0,0,0,0],flash:[null,null,null,null],lastHit:[-9,-9,-9,-9],ids:new Map(),arm:true,pops:[],holds:new Map(),srcs:[],dur:acc.duration-(nbuf?2:0),nbuf};if(G.lg)G.lg.gain.value=1;
   for(const [b,dst] of [[acc,bus],[lead,lg]])if(b){const s=ctx.createBufferSource();s.buffer=b;s.connect(dst);s.start(t0);G.srcs.push(s)}
   hud(true);cancelAnimationFrame(raf);raf=requestAnimationFrame(frame)}
  catch(e){busy();toast((e&&e.message)||'Impossible de lancer ce morceau')}
  finally{starting=false}}
-const now=()=>heardNow()+(G.useLat?latNow():0)-G.start+G.lead-G.off;
+const now=()=>audioNow()-(G.useLat?0:latNow())-G.start+G.lead-G.off;
 function stopGame(){if(!G)return;G.live=false;const b=G.bus,m=G.mg,srcs=G.srcs;try{b.gain.setTargetAtTime(0,ctx.currentTime,.08);m.gain.setTargetAtTime(0,ctx.currentTime,.08)}catch(e){}setTimeout(()=>{srcs.forEach(s=>{try{s.stop()}catch(e){}});try{b.disconnect();m.disconnect()}catch(e){}},500);cancelAnimationFrame(raf)}
 function hud(full){$('#score').textContent=fmtN(G.score);$('#combo').textContent=G.combo>=5?G.combo+' combo':'';
  if(full||G._lv!==G.lives){G._lv=G.lives;$('#lives').innerHTML=S.zen?'':Array.from({length:G.D.lives},(_,i)=>`<i class="${i<G.lives?'':'x'}"></i>`).join('')}}
@@ -835,7 +840,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&G&&G.live&
 $('#pz').addEventListener('click',()=>pause());$('#pz').addEventListener('touchstart',e=>{e.stopPropagation()},{passive:true});
 function pause(){if(!G||!G.live||G.paused)return;G.pt=now();G.paused=true;try{ctx.suspend()}catch(e){}
  overlay(`<h3>Pause</h3><p class="hint" style="text-align:center">${esc(G.song.title)} · ${DIFFS[diffKey].name} · v${VERSION}</p><div class="acts"><button class="btn primary" data-a="resume">Reprendre</button><button class="btn" data-a="retry">Recommencer</button><button class="btn" data-a="menu">Menu</button></div>`)}
-async function resume(){if(!G)return;$('#ov').hidden=true;try{await ctx.resume()}catch(e){}lastCT=-1;clk.o=null;clk.last=0;G.paused=false}
+async function resume(){if(!G)return;$('#ov').hidden=true;try{await ctx.resume()}catch(e){}lastCT=-1;clk.off=null;clk.last=0;G.paused=false}
 function overlay(h){$('#ovc').innerHTML=h;$('#ov').hidden=false;const b=$('#ovc .primary');b&&b.focus()}
 $('#ovc').addEventListener('click',async e=>{const a=e.target.closest('[data-a]');if(!a)return;const s=G&&G.song;
  if(a.dataset.a==='resume')resume();else if(a.dataset.a==='retry'){try{await ctx.resume()}catch(e){}start(s)}else menu()});
@@ -896,7 +901,7 @@ renderDiffs();render();
 $('#ver').textContent='v'+VERSION;
 try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});
  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!G&&!sessionStorage.getItem('ivr')){try{sessionStorage.setItem('ivr','1')}catch(e){}location.reload()}})}}catch(e){}
-window.__ivoire={GEN,parseMidi,buildChart,arrange,arrangeMidi,renderAudio,LIB,DIFFS,STY,seq,ensureCtx,G:()=>G};window.__now=()=>G?now():0;
+window.__ivoire={ctx:()=>ctx,GEN,parseMidi,buildChart,arrange,arrangeMidi,renderAudio,LIB,DIFFS,STY,seq,ensureCtx,G:()=>G};window.__now=()=>G?now():0;
 }
 </script>
 </body>
