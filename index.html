@@ -167,7 +167,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.9.1';
+const VERSION='0.10.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -395,45 +395,37 @@ const fft=(()=>{let n0=0,rev,cs,sn;return(re,im)=>{const n=re.length;
   cs=new Float32Array(n/2);sn=new Float32Array(n/2);for(let i=0;i<n/2;i++){cs[i]=Math.cos(2*Math.PI*i/n);sn[i]=-Math.sin(2*Math.PI*i/n)}}
  for(let i=0;i<n;i++){const j=rev[i];if(j>i){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t}}
  for(let sz=2;sz<=n;sz<<=1){const h=sz>>1,st=n/sz;for(let i=0;i<n;i+=sz)for(let j=0,k=0;j<h;j++,k+=st){const a=i+j,b=a+h,tr=re[b]*cs[k]-im[b]*sn[k],ti=re[b]*sn[k]+im[b]*cs[k];re[b]=re[a]-tr;im[b]=im[a]-ti;re[a]+=tr;im[a]+=ti}}}})();
-async function analyze(buf,prog){
- const sr=buf.sampleRate,N=1024,hop=512,len=buf.length,ch=buf.numberOfChannels,mono=new Float32Array(len);
- for(let c=0;c<ch;c++){const d=buf.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=d[i]/ch}
- const F=Math.max(0,Math.floor((len-N)/hop)),flux=new Float32Array(F),cent=new Float32Array(F);
+/* ================= imports audio : attaques, tempo, voix principale ================= */
+/* flux spectral (débuts de notes) + énergie, par trames de 512 échantillons */
+async function fluxOf(mono,sr,prog,fLo,fHi){
+ const N=1024,hop=512,len=mono.length,F=Math.max(0,Math.floor((len-N)/hop)),flux=new Float32Array(F),rms=new Float32Array(F),cent=new Float32Array(F);
  const w=new Float32Array(N);for(let i=0;i<N;i++)w[i]=.5-.5*Math.cos(2*Math.PI*i/N);
  const re=new Float32Array(N),im=new Float32Array(N);let pv=new Float32Array(N/2),cu=new Float32Array(N/2);
- const kMax=Math.min(N/2,Math.round(11000/sr*N));
- for(let f=0;f<F;f++){const o=f*hop;for(let i=0;i<N;i++){re[i]=mono[o+i]*w[i];im[i]=0}fft(re,im);
-  let fl=0,c1=0,c0=0;for(let k=1;k<kMax;k++){const m=Math.log1p(100*Math.hypot(re[k],im[k]));cu[k]=m;const dd=m-pv[k];if(dd>0)fl+=dd;c1+=k*m;c0+=m}
+ const k0=Math.max(1,Math.round(fLo/sr*N)),k1=Math.min(N/2,Math.round(fHi/sr*N));let tm=performance.now();
+ for(let f=0;f<F;f++){const o=f*hop;let e=0;for(let i=0;i<N;i++){const x=mono[o+i];re[i]=x*w[i];im[i]=0;e+=x*x}rms[f]=Math.sqrt(e/N);fft(re,im);
+  let fl=0,c1=0,c0=0;for(let k=k0;k<k1;k++){const m=Math.log1p(100*Math.hypot(re[k],im[k]));cu[k]=m;const dd=m-pv[k];if(dd>0)fl+=dd;c1+=k*m;c0+=m}
   flux[f]=fl;cent[f]=c0?c1/c0:0;const t=pv;pv=cu;cu=t;
-  if(f%700===0){prog(f/F);await new Promise(r=>setTimeout(r,0))}}
- const fr=sr/hop,W=Math.round(fr*.25),ps=new Float64Array(F+1);for(let i=0;i<F;i++)ps[i+1]=ps[i]+flux[i];
- const gm=ps[F]/Math.max(1,F)||1,minI=Math.round(fr*.085),out=[];let last=-1e9;
- for(let i=1;i<F-1;i++){const a=Math.max(0,i-W),b=Math.min(F,i+W+1),th=(ps[b]-ps[a])/(b-a)*1.35+gm*.15;
-  if(flux[i]<=th)continue;let ok=true;for(let j=Math.max(0,i-3);j<=Math.min(F-1,i+3);j++)if(flux[j]>flux[i]){ok=false;break}if(!ok)continue;
-  const s=(flux[i]-th)/gm;
-  if(i-last<minI){if(out.length&&s>out[out.length-1].s)out.pop();else continue}
-  out.push({t:+((i*hop+N*.25)/sr).toFixed(3),s:+s.toFixed(3),c:+cent[i].toFixed(1)});last=i}
- return{onsets:out,flux,fr}}
-/* ================= imports audio : tempo, grille, voix principale ================= */
-function beatTrack(flux,fr){
- const n=flux.length,ps=new Float64Array(n+1);for(let i=0;i<n;i++)ps[i+1]=ps[i]+flux[i];
- const W=Math.round(fr*.5),env=new Float32Array(n);let s2=0;
+  if(performance.now()-tm>40){prog&&prog(f/F);await new Promise(r=>setTimeout(r,0));tm=performance.now()}}
+ return{flux,rms,cent,fr:sr/hop,t0:N*.55/sr}}
+/* enveloppe normalisée : flux moins sa moyenne locale, en écarts-types */
+function normEnv(flux,fr,win){const n=flux.length,ps=new Float64Array(n+1);for(let i=0;i<n;i++)ps[i+1]=ps[i]+flux[i];
+ const W=Math.round(fr*win),env=new Float32Array(n);let s2=0;
  for(let i=0;i<n;i++){const a=Math.max(0,i-W),b=Math.min(n,i+W+1);env[i]=Math.max(0,flux[i]-(ps[b]-ps[a])/(b-a));s2+=env[i]*env[i]}
- const sd=Math.sqrt(s2/Math.max(1,n))||1;for(let i=0;i<n;i++)env[i]/=sd;
- let best=-1,bpm=120;
- for(let b=70;b<=180;b+=.5){const lag=60*fr/b,li=Math.floor(lag),lf=lag-li;let ac=0;for(let i=0;i+li+1<n;i+=2)ac+=env[i]*(env[i+li]*(1-lf)+env[i+li+1]*lf);
-  const sc=ac*Math.exp(-.5*(Math.log2(b/118)/.9)**2);if(sc>best){best=sc;bpm=b}}
- const P=60*fr/bpm,score=new Float32Array(n),prev=new Int32Array(n).fill(-1),lo=Math.round(P/2),hi=Math.round(2*P);
- for(let t=0;t<n;t++){let bv=-1e9,bp=-1;for(let p=t-hi;p<=t-lo;p++){if(p<0)continue;const v=score[p]-100*Math.log((t-p)/P)**2;if(v>bv){bv=v;bp=p}}
+ const sd=Math.sqrt(s2/Math.max(1,n))||1;for(let i=0;i<n;i++)env[i]/=sd;return env}
+const pct=(a,q)=>{const s=Float32Array.from(a).sort();return s[Math.min(s.length-1,Math.floor(s.length*q))]||0};
+function peaks(env,fr,th,minGap){const out=[],g=Math.round(fr*minGap),n=env.length;
+ for(let i=2;i<n-2;i++){const v=env[i];if(v<th)continue;let ok=true;for(let j=Math.max(0,i-3);j<=Math.min(n-1,i+3);j++)if(env[j]>v){ok=false;break}if(!ok)continue;
+  const l=out[out.length-1];if(l&&i-l.i<g){if(v>l.v){l.i=i;l.v=v}continue}out.push({i,v})}return out}
+function beatTrack(env,fr){
+ const n=env.length,ac=lag=>{const li=Math.floor(lag),lf=lag-li;let s=0;for(let i=0;i+li+1<n;i+=2)s+=env[i]*(env[i+li]*(1-lf)+env[i+li+1]*lf);return s};
+ const sc=b=>{const lag=60*fr/b;return(ac(lag)+.5*ac(lag*2)+.25*ac(lag*4))*Math.exp(-.5*(Math.log2(b/115)/.8)**2)};
+ let bpm=120,best=-1;for(let b=70;b<=180;b+=.5){const s=sc(b);if(s>best){best=s;bpm=b}}
+ for(let b=bpm-.6;b<=bpm+.6;b+=.05){const s=sc(b);if(s>best){best=s;bpm=b}}
+ const P=60*fr/bpm,score=new Float32Array(n),prev=new Int32Array(n).fill(-1),lo=Math.round(P*.6),hi=Math.round(P*1.6);
+ for(let t=0;t<n;t++){let bv=-1e9,bp=-1;for(let p=t-hi;p<=t-lo;p++){if(p<0)continue;const v=score[p]-200*Math.log((t-p)/P)**2;if(v>bv){bv=v;bp=p}}
   score[t]=env[t]+(bp>=0&&bv>0?bv:0);prev[t]=bv>0?bp:-1}
  let t=n-1,bv=-1e9;for(let i=Math.max(0,n-Math.round(P));i<n;i++)if(score[i]>bv){bv=score[i];t=i}
- const beats=[];while(t>=0){beats.push(t);t=prev[t]}beats.reverse();return{bpm,beats,env}}
-function makeGrid(bt,fr,toT){
- const{beats,env}=bt,n=env.length,str=f=>{let m=0;const c=Math.round(f);for(let i=Math.max(0,c-2);i<=Math.min(n-1,c+2);i++)m=Math.max(m,env[i]);return m},g=[];
- for(let k=0;k<beats.length;k++){const b0=beats[k],b1=k+1<beats.length?beats[k+1]:b0+(k?b0-beats[k-1]:fr/2),d=b1-b0;
-  g.push({t:+toT(b0).toFixed(3),l:0,s:+str(b0).toFixed(2)});
-  if(k+1<beats.length){g.push({t:+toT(b0+d/2).toFixed(3),l:1,s:+str(b0+d/2).toFixed(2)});for(const q of[.25,.75])g.push({t:+toT(b0+d*q).toFixed(3),l:2,s:+str(b0+d*q).toFixed(2)})}}
- return g.sort((a,b)=>a.t-b.t)}
+ const beats=[];while(t>=0){beats.push(t);t=prev[t]}beats.reverse();return{bpm:Math.round(bpm*10)/10,beats}}
 /* extraction de ce qui est au centre du mix (voix, lead) entre 220 Hz et 6,5 kHz */
 async function separate(buf,prog){
  const sr=buf.sampleRate,L=buf.getChannelData(0),R=buf.numberOfChannels>1?buf.getChannelData(1):L,n=buf.length,N=2048,H=1024;
@@ -449,33 +441,44 @@ async function separate(buf,prog){
   if(performance.now()-tm>40){prog&&prog(o/n);await new Promise(r=>setTimeout(r,0));tm=performance.now()}}
  return out.subarray(0,n)}
 async function analyzeAudio(buf,title){
- const a=await analyze(buf,p=>busy('Analyse du rythme…',title,p*.4));
- busy('Détection du tempo…',title,.42);await new Promise(r=>setTimeout(r,0));
- const bt=beatTrack(a.flux,a.fr),grid=makeGrid(bt,a.fr,f=>(f*512+1024*.25)/buf.sampleRate);
- const lead=await separate(buf,p=>busy('Isolation de la mélodie…',title,.45+p*.53)),half=new Int16Array(Math.ceil(lead.length/2));
- for(let i=0;i<half.length;i++)half[i]=Math.max(-32767,Math.min(32767,Math.round(lead[i*2]*32767)));
- return{onsets:a.onsets,grid,bpm:bt.bpm,lead:half.buffer,ana:2}}
+ const sr=buf.sampleRate,n=buf.length,ch=buf.numberOfChannels,mono=new Float32Array(n);
+ for(let c=0;c<ch;c++){const d=buf.getChannelData(c);for(let i=0;i<n;i++)mono[i]+=d[i]/ch}
+ const mix=await fluxOf(mono,sr,p=>busy('Analyse du rythme…',title,p*.3),30,11000);
+ const menv=normEnv(mix.flux,mix.fr,.25),bt=beatTrack(menv,mix.fr),fT=f=>f/mix.fr+mix.t0;
+ const lead=await separate(buf,p=>busy('Isolation de la mélodie…',title,.3+p*.4));
+ const lf=await fluxOf(lead,sr,p=>busy('Repérage des notes…',title,.7+p*.25),220,6500),lenv=normEnv(lf.flux,lf.fr,.25);
+ /* grille au quart de temps, pour recaler les attaques proches */
+ const grid=[];for(let k=0;k+1<bt.beats.length;k++){const a=fT(bt.beats[k]),b=fT(bt.beats[k+1]);for(let q=0;q<4;q++)grid.push({t:a+(b-a)*q/4,l:q===0?0:q===2?1:2})}
+ const snap=t=>{let lo=0,hi=grid.length-1;while(lo<hi){const m=(lo+hi)>>1;if(grid[m].t<t)lo=m+1;else hi=m}let best=null;for(const g of[grid[lo-1],grid[lo]])if(g&&Math.abs(g.t-t)<.035&&(!best||Math.abs(g.t-t)<Math.abs(best.t-t)))best=g;return best};
+ const lr95=pct(lf.rms,.95)||1e-4,mr95=pct(mix.rms,.95)||1e-4,notes=[];
+ /* voix / mélodie */
+ for(const p of peaks(lenv,lf.fr,.9,.08)){const i=Math.min(p.i+2,lf.rms.length-1);if(lf.rms[i]<lr95*.12||mix.rms[Math.min(p.i,mix.rms.length-1)]<mr95*.08)continue;
+  const t=fT(p.i),g=snap(t);notes.push({t:+(g?g.t:t).toFixed(3),s:+p.v.toFixed(2),k:'v',l:g?g.l:3,c:+lf.cent[p.i].toFixed(1)})}
+ /* passages sans voix : on suit les attaques du mix */
+ for(const p of peaks(menv,mix.fr,1.2,.12)){const i=Math.min(p.i+2,lf.rms.length-1);if(lf.rms[i]>=lr95*.12||mix.rms[p.i]<mr95*.1)continue;
+  const t=fT(p.i),g=snap(t);if(notes.some(x=>Math.abs(x.t-t)<.08))continue;notes.push({t:+(g?g.t:t).toFixed(3),s:+(p.v*.8).toFixed(2),k:'d',l:g?g.l:3,c:+mix.cent[p.i].toFixed(1)})}
+ notes.sort((a,b)=>a.t-b.t);
+ const half=new Int16Array(Math.ceil(lead.length/2));for(let i=0;i<half.length;i++)half[i]=Math.max(-32767,Math.min(32767,Math.round(lead[i*2]*32767)));
+ return{notes,beats:bt.beats.map(f=>+fT(f).toFixed(3)),bpm:bt.bpm,lead:half.buffer,ana:4}}
 async function prepareAudio(song){
- const k='a2|'+song.id;if(cache.has(k))return cache.get(k);
+ const k='a3|'+song.id;if(cache.has(k))return cache.get(k);
  const rec=await DB.rec(song.id);if(!rec||!rec.data)throw new Error('Fichier introuvable, réimporte-le');
  const buf=await ctx.decodeAudioData(rec.data.slice(0));
- if(!rec.lead||!song.grid){const r=await analyzeAudio(buf,song.title);song.grid=r.grid;song.bpm=r.bpm;song.ana=2;rec.lead=r.lead;
-  const meta={...song};delete meta.kind_;await DB.put(meta,{data:rec.data,lead:r.lead})}
+ if(!rec.lead||song.ana!==4){const r=await analyzeAudio(buf,song.title);Object.assign(song,{notes:r.notes,beats:r.beats,bpm:r.bpm,ana:4});delete song.grid;rec.lead=r.lead;
+  await DB.put({...song},{data:rec.data,lead:r.lead})}
  const h=new Int16Array(rec.lead),n=buf.length,lead=ctx.createBuffer(1,n,buf.sampleRate),ld=lead.getChannelData(0),rest=ctx.createBuffer(2,n,buf.sampleRate);
- for(let i=0;i<n;i++){const p=i/2,a=Math.floor(p),f=p-a,x=((h[a]||0)*(1-f)+(h[a+1]||0)*f)/32767;ld[i]=x}
+ for(let i=0;i<n;i++){const p=i/2,a=Math.floor(p),f=p-a;ld[i]=((h[a]||0)*(1-f)+(h[a+1]||0)*f)/32767}
  for(let c=0;c<2;c++){const src=buf.getChannelData(Math.min(c,buf.numberOfChannels-1)),d=rest.getChannelData(c);for(let i=0;i<n;i++)d[i]=src[i]-ld[i]}
  const r={rest,lead};remember(k,r);return r}
-const AKEEP={facile:[.6,0,0],normal:[.9,.3,0],avance:[1,.55,.1],difficile:[1,.75,.3],expert:[1,.9,.5],maitre:[1,1,.75]};
-function gridChart(song,D,rng){
- const keep=AKEEP[diffKey]||AKEEP.normal,cand=[];
- for(let l=0;l<3;l++){const pts=song.grid.filter(p=>p.l===l&&p.s>.15).sort((a,b)=>b.s-a.s);cand.push(...pts.slice(0,Math.round(pts.length*keep[l])))}
- cand.sort((a,b)=>a.l-b.l||b.s-a.s);const gap=D.gap*1.1,cell=new Map(),acc=[];
- for(const o of cand){const k=Math.floor(o.t/gap);let ok=true;for(let c=k-1;c<=k+1&&ok;c++)for(const t of cell.get(c)||[])if(Math.abs(t-o.t)<gap-1e-3){ok=false;break}
+/* tuiles d'un import : les attaques les plus marquées d'abord, celles sur les temps favorisées, espacées selon la difficulté */
+const AKEEP={facile:.3,normal:.5,avance:.68,difficile:.8,expert:.9,maitre:1};
+function noteChart(song,D,rng){
+ const keep=AKEEP[diffKey]||.5,pr=x=>x.s*(x.l===0?1.6:x.l===1?1.3:x.l===2?1.05:.9)*(x.k==='v'?1:.85);
+ const cand=[...song.notes].sort((a,b)=>pr(b)-pr(a)),acc=[],cell=new Map(),gap=D.gap*1.1,lim=Math.round(cand.length*keep);
+ for(const o of cand){if(acc.length>=lim)break;const k=Math.floor(o.t/gap);let ok=true;for(let c=k-1;c<=k+1&&ok;c++)for(const t of cell.get(c)||[])if(Math.abs(t-o.t)<gap-1e-3){ok=false;break}
   if(ok){acc.push(o);(cell.get(k)||cell.set(k,[]).get(k)).push(o.t)}}
- const s0=song.grid.filter(p=>p.l===0).map(p=>p.s).sort((a,b)=>b-a),strong=s0[Math.floor(s0.length*.15)]??1e9;
- return acc.sort((a,b)=>a.t-b.t).map(o=>({t:o.t,d:0,merged:0,ns:[],dbl:o.l===0&&o.s>=strong&&rng()<D.dbl?-1:null}))}
-
-
+ const ss=acc.map(pr).sort((a,b)=>b-a),strong=ss[Math.floor(ss.length*.12)]??1e9;
+ return acc.sort((a,b)=>a.t-b.t).map(o=>({t:o.t,d:0,merged:0,ns:[],dbl:o.l===0&&pr(o)>=strong&&rng()<D.dbl?-1:null}))}
 
 /* ================= MIDI ================= */
 function parseMidi(ab){
@@ -545,7 +548,7 @@ function lanes(tiles,rng,minH){const out=[];let prev=[],mode='rnd',left=0,dir=1,
  return out}
 function buildChart(song,D,look,mel,extra){
  const rng=rngOf(hash(song.id+'|'+diffKey));let tiles;
- if(song.kind==='audio'&&song.grid)tiles=gridChart(song,D,rng);
+ if(song.kind==='audio'&&song.notes)tiles=noteChart(song,D,rng);
  else if(song.kind==='audio'){const gap=D.gap*1.25,cell=new Map(),acc=[];
   for(const o of [...song.onsets].sort((a,b)=>b.s-a.s)){const k=Math.floor(o.t/gap);let ok=true;
    for(let c=k-1;c<=k+1&&ok;c++)for(const t of cell.get(c)||[])if(Math.abs(t-o.t)<gap){ok=false;break}
@@ -579,7 +582,7 @@ async function start(song){
  if(starting)return;starting=true;
  try{ensureCtx();try{await ctx.resume()}catch(e){}
   const D=DIFFS[diffKey],look=D.look/S.spd;let acc,nbuf=null,notes=null,extras=null,beats=[],lead=null;
-  if(song.kind==='audio'){busy('Chargement…',song.title,0);const r=await prepareAudio(song);acc=r.rest;lead=r.lead;beats=song.grid.filter(p=>p.l===0).map(p=>p.t)}
+  if(song.kind==='audio'){busy('Chargement…',song.title,0);const r=await prepareAudio(song);acc=r.rest;lead=r.lead;beats=song.beats||[]}
   else{const tm=D.tempo*S.tmp,k=song.id+'|'+tm.toFixed(3);let r=cache.get(k);
    if(!r){busy('Préparation du morceau…',song.title,0);const arr=song.kind==='midi'?arrangeMidi(song,tm):arrange(song,tm);
     const b=await renderAudio(arr,p=>busy('Préparation du morceau…',song.title,p));r={...b,arr};remember(k,r)}
@@ -700,8 +703,8 @@ $('#file').addEventListener('change',async e=>{const files=[...e.target.files];e
    if(/\.midi?$/i.test(f.name)||/midi/.test(f.type)){const m=parseMidi(ab);await DB.put({id,title,kind:'midi',notes:m.notes,bpm:m.bpm,dur:Math.max(...m.notes.map(x=>x.t+x.d)),added:Date.now()});toast('« '+title+' » ajouté')}
    else{busy('Analyse du rythme…',title,0);const buf=await ctx.decodeAudioData(ab.slice(0));
     const r=await analyzeAudio(buf,title);busy();
-    if(r.grid.length<16)throw new Error('Rythme introuvable dans ce fichier');
-    await DB.put({id,title,kind:'audio',onsets:r.onsets,grid:r.grid,bpm:r.bpm,ana:2,dur:buf.duration,added:Date.now()},{data:ab,lead:r.lead});toast('« '+title+' » ajouté, '+Math.round(r.bpm)+' BPM')}}
+    if(r.notes.length<16)throw new Error('Rythme introuvable dans ce fichier');
+    await DB.put({id,title,kind:'audio',notes:r.notes,beats:r.beats,bpm:r.bpm,ana:4,dur:buf.duration,added:Date.now()},{data:ab,lead:r.lead});toast('« '+title+' » ajouté, '+Math.round(r.bpm)+' BPM')}}
   catch(err){busy();toast((err&&err.message&&err.message.length<80?err.message:'Impossible de lire ce fichier')+' ('+f.name+')')}}
  if(!DB.ok)toast('Stockage indisponible ici : les imports dureront jusqu\'à la fermeture');
  render()});
