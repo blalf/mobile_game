@@ -164,7 +164,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.7.1';
+const VERSION='0.7.2';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -571,8 +571,8 @@ function draw(t){const W=cv.width,{H,ly,pps}=geo(),lw=W/4,pad=2*dpr,T=G.tiles;
  cx.fillStyle='#d9d2c3';for(let l=1;l<4;l++)cx.fillRect(l*lw-dpr/2,0,dpr,H);
  cx.fillStyle=`rgba(18,16,20,${.06+pulse*.05})`;cx.fillRect(0,ly,W,H-ly);
  cx.fillStyle=`rgba(255,90,78,${.35+pulse*.5})`;cx.fillRect(0,ly-dpr*(1+pulse*1.5),W,dpr*(2+pulse*3));
- while(G.dlo<T.length&&T[G.dlo].res&&ly-(T[G.dlo].t-t)*pps-(T[G.dlo].hd||G.tileS)*pps>H)G.dlo++;
- for(let j=G.dlo;j<T.length;j++){const x=T[j],yb=ly-(x.t-t)*pps;if(yb<0)break;const h=(x.hd||G.tileS)*pps,yt=yb-h,x0=x.lane*lw+pad,w=lw-pad*2;if(yt>H)continue;
+ const off=G.tileS*pps/2;while(G.dlo<T.length&&T[G.dlo].res&&ly-(T[G.dlo].t-t)*pps+off-(T[G.dlo].hd||G.tileS)*pps>H)G.dlo++;
+ for(let j=G.dlo;j<T.length;j++){const x=T[j],yb=ly-(x.t-t)*pps+off;if(yb<0)break;const h=(x.hd||G.tileS)*pps,yt=yb-h,x0=x.lane*lw+pad,w=lw-pad*2;if(yt>H)continue;
   if(x.res==='hit'&&!x.hd){const a=Math.max(0,1-(t-x.ht)/.25);cx.fillStyle=`rgba(18,16,20,${.12+a*.5})`;rr(x0,yt,w,h-pad,6*dpr);cx.fill();continue}
   if(x.res==='miss'){cx.fillStyle=(Math.floor((t-x.mt)*8)%2)?'#e5483b':'#121014';rr(x0,yt,w,h-pad,6*dpr);cx.fill();continue}
   const g=cx.createLinearGradient(0,yt,0,yb);g.addColorStop(0,'#2b2730');g.addColorStop(1,'#0c0b0e');
