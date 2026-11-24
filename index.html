@@ -167,7 +167,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:32px}
 
 <script>
 {
-const VERSION='0.10.0';
+const VERSION='0.11.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('ivoire:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ivoire:'+k,JSON.stringify(v))}catch(e){}}};
@@ -395,37 +395,7 @@ const fft=(()=>{let n0=0,rev,cs,sn;return(re,im)=>{const n=re.length;
   cs=new Float32Array(n/2);sn=new Float32Array(n/2);for(let i=0;i<n/2;i++){cs[i]=Math.cos(2*Math.PI*i/n);sn[i]=-Math.sin(2*Math.PI*i/n)}}
  for(let i=0;i<n;i++){const j=rev[i];if(j>i){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t}}
  for(let sz=2;sz<=n;sz<<=1){const h=sz>>1,st=n/sz;for(let i=0;i<n;i+=sz)for(let j=0,k=0;j<h;j++,k+=st){const a=i+j,b=a+h,tr=re[b]*cs[k]-im[b]*sn[k],ti=re[b]*sn[k]+im[b]*cs[k];re[b]=re[a]-tr;im[b]=im[a]-ti;re[a]+=tr;im[a]+=ti}}}})();
-/* ================= imports audio : attaques, tempo, voix principale ================= */
-/* flux spectral (débuts de notes) + énergie, par trames de 512 échantillons */
-async function fluxOf(mono,sr,prog,fLo,fHi){
- const N=1024,hop=512,len=mono.length,F=Math.max(0,Math.floor((len-N)/hop)),flux=new Float32Array(F),rms=new Float32Array(F),cent=new Float32Array(F);
- const w=new Float32Array(N);for(let i=0;i<N;i++)w[i]=.5-.5*Math.cos(2*Math.PI*i/N);
- const re=new Float32Array(N),im=new Float32Array(N);let pv=new Float32Array(N/2),cu=new Float32Array(N/2);
- const k0=Math.max(1,Math.round(fLo/sr*N)),k1=Math.min(N/2,Math.round(fHi/sr*N));let tm=performance.now();
- for(let f=0;f<F;f++){const o=f*hop;let e=0;for(let i=0;i<N;i++){const x=mono[o+i];re[i]=x*w[i];im[i]=0;e+=x*x}rms[f]=Math.sqrt(e/N);fft(re,im);
-  let fl=0,c1=0,c0=0;for(let k=k0;k<k1;k++){const m=Math.log1p(100*Math.hypot(re[k],im[k]));cu[k]=m;const dd=m-pv[k];if(dd>0)fl+=dd;c1+=k*m;c0+=m}
-  flux[f]=fl;cent[f]=c0?c1/c0:0;const t=pv;pv=cu;cu=t;
-  if(performance.now()-tm>40){prog&&prog(f/F);await new Promise(r=>setTimeout(r,0));tm=performance.now()}}
- return{flux,rms,cent,fr:sr/hop,t0:N*.55/sr}}
-/* enveloppe normalisée : flux moins sa moyenne locale, en écarts-types */
-function normEnv(flux,fr,win){const n=flux.length,ps=new Float64Array(n+1);for(let i=0;i<n;i++)ps[i+1]=ps[i]+flux[i];
- const W=Math.round(fr*win),env=new Float32Array(n);let s2=0;
- for(let i=0;i<n;i++){const a=Math.max(0,i-W),b=Math.min(n,i+W+1);env[i]=Math.max(0,flux[i]-(ps[b]-ps[a])/(b-a));s2+=env[i]*env[i]}
- const sd=Math.sqrt(s2/Math.max(1,n))||1;for(let i=0;i<n;i++)env[i]/=sd;return env}
 const pct=(a,q)=>{const s=Float32Array.from(a).sort();return s[Math.min(s.length-1,Math.floor(s.length*q))]||0};
-function peaks(env,fr,th,minGap){const out=[],g=Math.round(fr*minGap),n=env.length;
- for(let i=2;i<n-2;i++){const v=env[i];if(v<th)continue;let ok=true;for(let j=Math.max(0,i-3);j<=Math.min(n-1,i+3);j++)if(env[j]>v){ok=false;break}if(!ok)continue;
-  const l=out[out.length-1];if(l&&i-l.i<g){if(v>l.v){l.i=i;l.v=v}continue}out.push({i,v})}return out}
-function beatTrack(env,fr){
- const n=env.length,ac=lag=>{const li=Math.floor(lag),lf=lag-li;let s=0;for(let i=0;i+li+1<n;i+=2)s+=env[i]*(env[i+li]*(1-lf)+env[i+li+1]*lf);return s};
- const sc=b=>{const lag=60*fr/b;return(ac(lag)+.5*ac(lag*2)+.25*ac(lag*4))*Math.exp(-.5*(Math.log2(b/115)/.8)**2)};
- let bpm=120,best=-1;for(let b=70;b<=180;b+=.5){const s=sc(b);if(s>best){best=s;bpm=b}}
- for(let b=bpm-.6;b<=bpm+.6;b+=.05){const s=sc(b);if(s>best){best=s;bpm=b}}
- const P=60*fr/bpm,score=new Float32Array(n),prev=new Int32Array(n).fill(-1),lo=Math.round(P*.6),hi=Math.round(P*1.6);
- for(let t=0;t<n;t++){let bv=-1e9,bp=-1;for(let p=t-hi;p<=t-lo;p++){if(p<0)continue;const v=score[p]-200*Math.log((t-p)/P)**2;if(v>bv){bv=v;bp=p}}
-  score[t]=env[t]+(bp>=0&&bv>0?bv:0);prev[t]=bv>0?bp:-1}
- let t=n-1,bv=-1e9;for(let i=Math.max(0,n-Math.round(P));i<n;i++)if(score[i]>bv){bv=score[i];t=i}
- const beats=[];while(t>=0){beats.push(t);t=prev[t]}beats.reverse();return{bpm:Math.round(bpm*10)/10,beats}}
 /* extraction de ce qui est au centre du mix (voix, lead) entre 220 Hz et 6,5 kHz */
 async function separate(buf,prog){
  const sr=buf.sampleRate,L=buf.getChannelData(0),R=buf.numberOfChannels>1?buf.getChannelData(1):L,n=buf.length,N=2048,H=1024;
@@ -440,45 +410,93 @@ async function separate(buf,prog){
   fft(yr,yi);for(let i=0;i<N;i++)out[o+i]+=yr[i]/N*w[i];
   if(performance.now()-tm>40){prog&&prog(o/n);await new Promise(r=>setTimeout(r,0));tm=performance.now()}}
  return out.subarray(0,n)}
+/* ================= imports audio ================= */
+/* Analyse : SuperFlux (Böck & Widmer 2013) pour les attaques, tempo par autocorrélation + suivi de temps par programmation dynamique,
+   choix de la grille (binaire / ternaire) qui explique le mieux les attaques, recalage, puis harmonisation des mesures au motif semblable. */
+const yieldUI=()=>new Promise(r=>setTimeout(r,0));
+async function superflux(x,sr,fmin,fmax,prog){
+ const N=2048,hop=Math.round(sr/100),fps=sr/hop,n=Math.max(0,Math.floor((x.length-N)/hop)),w=new Float32Array(N);for(let i=0;i<N;i++)w[i]=.5-.5*Math.cos(2*Math.PI*i/N);
+ const fb=[],bpo=24;let e=[];for(let i=0;;i++){const f=fmin*2**(i/bpo);if(f>fmax)break;e.push(f)}
+ for(let i=1;i<e.length-1;i++){const a=e[i-1]*N/sr,b=e[i]*N/sr,c=e[i+1]*N/sr,k0=Math.max(1,Math.floor(a)),k1=Math.min(N/2,Math.ceil(c)),ws=[];let s=0;
+  for(let k=k0;k<=k1;k++){const v=Math.max(0,Math.min((k-a)/(b-a),(c-k)/(c-b)));ws.push(v);s+=v}if(s>0)fb.push({k0,ws:ws.map(v=>v/s)})}
+ const B=fb.length,X=[new Float32Array(B),new Float32Array(B),new Float32Array(B)],sf=new Float32Array(n),rms=new Float32Array(n),re=new Float32Array(N),im=new Float32Array(N),mag=new Float32Array(N/2+1);
+ let tm=performance.now();
+ for(let f=0;f<n;f++){const o=f*hop;let en=0;for(let i=0;i<N;i++){const v=x[o+i];re[i]=v*w[i];im[i]=0;en+=v*v}rms[f]=Math.sqrt(en/N);fft(re,im);
+  for(let k=0;k<=N/2;k++)mag[k]=Math.hypot(re[k],im[k]);const cur=X[f%3];
+  for(let j=0;j<B;j++){const{k0,ws}=fb[j];let s=0;for(let q=0;q<ws.length;q++)s+=mag[k0+q]*ws[q];cur[j]=Math.log10(1+s)}
+  if(f>=2){const p=X[(f-2)%3];let d=0;for(let j=0;j<B;j++){const m=Math.max(p[j],j?p[j-1]:0,j<B-1?p[j+1]:0),v=cur[j]-m;if(v>0)d+=v}sf[f]=d}
+  if(performance.now()-tm>40){prog&&prog(f/n);await yieldUI();tm=performance.now()}}
+ return{sf,rms,fps,c:N/2/sr}}
+function pickOn(sf){const n=sf.length,out=[];let m=0,s2=0;for(let i=0;i<n;i++)m+=sf[i];m/=n||1;for(let i=0;i<n;i++)s2+=(sf[i]-m)**2;const delta=Math.sqrt(s2/(n||1))*.5;let last=-99;
+ for(let i=0;i<n;i++){const v=sf[i];let ok=true;for(let j=Math.max(0,i-3);j<=Math.min(n-1,i+3);j++)if(sf[j]>v){ok=false;break}if(!ok)continue;
+  let a=0,c=0;for(let j=Math.max(0,i-10);j<=Math.min(n-1,i+7);j++){a+=sf[j];c++}if(v<a/c+delta||i-last<3)continue;out.push(i);last=i}return out}
+function tempoCands(env,fps){const n=env.length;let m=0;for(const v of env)m+=v;m/=n;let N=1;while(N<2*n)N*=2;
+ const re=new Float32Array(N),im=new Float32Array(N);for(let i=0;i<n;i++)re[i]=env[i]-m;fft(re,im);for(let i=0;i<N;i++){re[i]=re[i]*re[i]+im[i]*im[i];im[i]=0}fft(re,im);
+ const ac=lag=>{const i=Math.floor(lag),f=lag-i;return re[i]*(1-f)+re[i+1]*f},pts=[];for(let b=60;b<=200;b+=.25)pts.push([ac(60*fps/b),b]);
+ const c=[];for(let j=1;j<pts.length-1;j++)if(pts[j][0]>pts[j-1][0]&&pts[j][0]>=pts[j+1][0]&&pts[j][1]>=70&&pts[j][1]<=190)c.push(pts[j]);return c.sort((a,b)=>b[0]-a[0]).slice(0,6).map(p=>p[1])}
+function dpBeats(env,fps,bpm){const n=env.length,P=60*fps/bpm;let s2=0;for(const v of env)s2+=v*v;const sd=Math.sqrt(s2/n)||1;
+ const sc=new Float32Array(n),pv=new Int32Array(n).fill(-1),lo=Math.round(P*.5),hi=Math.round(P*2);
+ for(let t=0;t<n;t++){let bv=-1e9,bp=-1;for(let p=Math.max(0,t-hi);p<t-lo;p++){const v=sc[p]-100*Math.log((t-p)/P)**2;if(v>bv){bv=v;bp=p}}sc[t]=env[t]/sd+(bv>0?bv:0);pv[t]=bv>0?bp:-1}
+ let t=n-1,bv=-1e9;for(let i=Math.max(0,n-Math.round(P));i<n;i++)if(sc[i]>bv){bv=sc[i];t=i}const b=[];while(t>=0){b.push(t);t=pv[t]}return b.reverse()}
+function gridOf(bt,F){const g=[];for(let k=0;k+1<bt.length;k++){const a=bt[k],b=bt[k+1];for(let q=0;q<F;q++)g.push(a+(b-a)*q/F)}return g}
+function gridFit(ot,ow,bt,sub){const G=gridOf(bt,sub);if(G.length<8)return-1e9;let hit=0,tot=0;
+ for(let i=0;i<ot.length;i++){const t=ot[i];if(t<G[0]||t>G[G.length-1])continue;let lo=0,hi=G.length-1;while(lo<hi){const m=(lo+hi)>>1;if(G[m]<t)lo=m+1;else hi=m}
+  const d=Math.min(Math.abs(G[lo]-t),lo?Math.abs(G[lo-1]-t):1);tot+=ow[i];if(d<.025)hit+=ow[i]}
+ const dens=G.length/(G[G.length-1]-G[0]);return tot?(hit-Math.min(1,dens*.05)*tot)/tot:-1e9}
+const median=a=>{if(!a.length)return 1;const s=[...a].sort((x,y)=>x-y);return s[s.length>>1]||1};
 async function analyzeAudio(buf,title){
  const sr=buf.sampleRate,n=buf.length,ch=buf.numberOfChannels,mono=new Float32Array(n);
  for(let c=0;c<ch;c++){const d=buf.getChannelData(c);for(let i=0;i<n;i++)mono[i]+=d[i]/ch}
- const mix=await fluxOf(mono,sr,p=>busy('Analyse du rythme…',title,p*.3),30,11000);
- const menv=normEnv(mix.flux,mix.fr,.25),bt=beatTrack(menv,mix.fr),fT=f=>f/mix.fr+mix.t0;
- const lead=await separate(buf,p=>busy('Isolation de la mélodie…',title,.3+p*.4));
- const lf=await fluxOf(lead,sr,p=>busy('Repérage des notes…',title,.7+p*.25),220,6500),lenv=normEnv(lf.flux,lf.fr,.25);
- /* grille au quart de temps, pour recaler les attaques proches */
- const grid=[];for(let k=0;k+1<bt.beats.length;k++){const a=fT(bt.beats[k]),b=fT(bt.beats[k+1]);for(let q=0;q<4;q++)grid.push({t:a+(b-a)*q/4,l:q===0?0:q===2?1:2})}
- const snap=t=>{let lo=0,hi=grid.length-1;while(lo<hi){const m=(lo+hi)>>1;if(grid[m].t<t)lo=m+1;else hi=m}let best=null;for(const g of[grid[lo-1],grid[lo]])if(g&&Math.abs(g.t-t)<.035&&(!best||Math.abs(g.t-t)<Math.abs(best.t-t)))best=g;return best};
- const lr95=pct(lf.rms,.95)||1e-4,mr95=pct(mix.rms,.95)||1e-4,notes=[];
- /* voix / mélodie */
- for(const p of peaks(lenv,lf.fr,.9,.08)){const i=Math.min(p.i+2,lf.rms.length-1);if(lf.rms[i]<lr95*.12||mix.rms[Math.min(p.i,mix.rms.length-1)]<mr95*.08)continue;
-  const t=fT(p.i),g=snap(t);notes.push({t:+(g?g.t:t).toFixed(3),s:+p.v.toFixed(2),k:'v',l:g?g.l:3,c:+lf.cent[p.i].toFixed(1)})}
- /* passages sans voix : on suit les attaques du mix */
- for(const p of peaks(menv,mix.fr,1.2,.12)){const i=Math.min(p.i+2,lf.rms.length-1);if(lf.rms[i]>=lr95*.12||mix.rms[p.i]<mr95*.1)continue;
-  const t=fT(p.i),g=snap(t);if(notes.some(x=>Math.abs(x.t-t)<.08))continue;notes.push({t:+(g?g.t:t).toFixed(3),s:+(p.v*.8).toFixed(2),k:'d',l:g?g.l:3,c:+mix.cent[p.i].toFixed(1)})}
+ const M=await superflux(mono,sr,30,11000,p=>busy('Analyse du rythme…',title,p*.25));
+ const lead=await separate(buf,p=>busy('Isolation de la mélodie…',title,.25+p*.3));
+ const V=await superflux(lead,sr,180,7000,p=>busy('Repérage des notes…',title,.55+p*.25));
+ busy('Calage sur le tempo…',title,.82);await yieldUI();
+ const fps=M.fps,T=i=>i/fps+M.c,mon=pickOn(M.sf),ot=mon.map(T),ow=mon.map(i=>M.sf[i]);
+ let best=null;for(const bpm of tempoCands(M.sf,fps)){const bt=dpBeats(M.sf,fps,bpm).map(T);for(const sub of[2,3]){const s=gridFit(ot,ow,bt,sub);if(!best||s>best.s)best={s,bpm,sub,bt}}await yieldUI()}
+ const lr95=pct(V.rms,.95)||1e-4,mr95=pct(M.rms,.95)||1e-4,von=pickOn(V.sf).filter(i=>V.rms[Math.min(i+2,V.rms.length-1)]>.12*lr95&&M.rms[Math.min(i,M.rms.length-1)]>.06*mr95);
+ const vmed=median(von.map(i=>V.sf[i])),mmed=median(mon.map(i=>M.sf[i])),notes=[];
+ const free=!best||best.s<.32;
+ if(free){ /* tempo trop variable : attaques brutes, normalisées localement */
+  const all=von.map(i=>({t:T(i),w:V.sf[i]/vmed,k:'v'}));
+  for(const i of mon)if(M.rms[i]>.1*mr95&&!all.some(a=>Math.abs(a.t-T(i))<.09)&&V.rms[Math.min(i+2,V.rms.length-1)]<.12*lr95)all.push({t:T(i),w:M.sf[i]/mmed*.8,k:'d'});
+  all.sort((a,b)=>a.t-b.t);
+  for(let i=0;i<all.length;i++){const loc=all.slice(Math.max(0,i-12),i+13).map(a=>a.w);const nv=all[i].w/median(loc);if(nv>.6)notes.push({t:+all[i].t.toFixed(3),l:nv>1.4?0:nv>.9?1:2,s:+nv.toFixed(2),k:all[i].k})}
+ }else{
+  const{bt,sub}=best,F=sub*2,G=gridOf(bt,F),lev=q=>q===0?0:q%2===0?1:2;
+  const snap=(idx,sfv,med)=>{const o=new Map();for(const i of idx){const t=T(i);let lo=0,hi=G.length-1;while(lo<hi){const m=(lo+hi)>>1;if(G[m]<t)lo=m+1;else hi=m}
+   for(const j of[lo-1,lo])if(j>=0&&j<G.length-1){const step=G[j+1]-G[j];if(Math.abs(G[j]-t)<Math.min(.045,.35*step))o.set(j,Math.max(o.get(j)||0,sfv[i]/med))}}return o};
+  const Ls=snap(von,V.sf,vmed),Ms=snap(mon,M.sf,mmed),S=4*F,bars=Math.floor((bt.length-1)/4),vocal=[],vec=[];
+  for(let b=0;b<bars;b++){const a=Math.round((bt[b*4]-M.c)*fps),e=Math.round((bt[Math.min(b*4+4,bt.length-1)]-M.c)*fps);let s=0,c=0;for(let i=Math.max(0,a);i<Math.min(e,V.rms.length);i++){s+=V.rms[i];c++}
+   let k=0;for(let q=0;q<S;q++)if(Ls.has(b*S+q))k++;vocal.push(c&&s/c>.18*lr95&&k>=2)}
+  for(let b=0;b<bars;b++){const src=vocal[b]?Ls:Ms,v=new Float32Array(S);for(let q=0;q<S;q++){const x=src.get(b*S+q)||0;v[q]=!vocal[b]&&lev(q%F)===2?0:x}vec.push(v)}
+  const nv=vec.map((v,b)=>{const nz=[];for(let bb=Math.max(0,b-4);bb<Math.min(bars,b+5);bb++)for(const x of vec[bb])if(x>0)nz.push(x);const m=median(nz);return v.map(x=>x/m)});
+  const pres=nv.map(v=>v.map(x=>x>.45?1:0)),cl=new Int32Array(bars).fill(-1);let K=0;
+  for(let b=0;b<bars;b++){if(cl[b]>=0||!pres[b].some(x=>x))continue;cl[b]=K;
+   for(let b2=b+1;b2<bars;b2++){if(cl[b2]>=0||vocal[b2]!==vocal[b])continue;let I=0,U=0;for(let q=0;q<S;q++){I+=pres[b][q]&pres[b2][q];U+=pres[b][q]|pres[b2][q]}if(U&&I/U>=.6)cl[b2]=K}K++}
+  const fin=pres.map(v=>[...v]);
+  for(let k=0;k<K;k++){const mem=[];for(let b=0;b<bars;b++)if(cl[b]===k)mem.push(b);if(mem.length<2)continue;
+   for(let q=0;q<S;q++){const cons=mem.reduce((a,b)=>a+pres[b][q],0)/mem.length;for(const b of mem){if(cons>=.5&&!pres[b][q]&&nv[b][q]>.2)fin[b][q]=1;if(cons<.34&&pres[b][q])fin[b][q]=0}}}
+  for(let b=0;b<bars;b++)for(let q=0;q<S;q++)if(fin[b][q])notes.push({t:+G[b*S+q].toFixed(3),l:lev(q%F),s:+Math.max(.3,nv[b][q]).toFixed(2),k:vocal[b]?'v':'d'})}
  notes.sort((a,b)=>a.t-b.t);
  const half=new Int16Array(Math.ceil(lead.length/2));for(let i=0;i<half.length;i++)half[i]=Math.max(-32767,Math.min(32767,Math.round(lead[i*2]*32767)));
- return{notes,beats:bt.beats.map(f=>+fT(f).toFixed(3)),bpm:bt.bpm,lead:half.buffer,ana:4}}
+ return{notes,beats:best?best.bt.map(t=>+t.toFixed(3)):[],bpm:best?Math.round(best.bpm*10)/10:0,free,lead:half.buffer,ana:5}}
 async function prepareAudio(song){
- const k='a3|'+song.id;if(cache.has(k))return cache.get(k);
+ const k='a5|'+song.id;if(cache.has(k))return cache.get(k);
  const rec=await DB.rec(song.id);if(!rec||!rec.data)throw new Error('Fichier introuvable, réimporte-le');
  const buf=await ctx.decodeAudioData(rec.data.slice(0));
- if(!rec.lead||song.ana!==4){const r=await analyzeAudio(buf,song.title);Object.assign(song,{notes:r.notes,beats:r.beats,bpm:r.bpm,ana:4});delete song.grid;rec.lead=r.lead;
+ if(!rec.lead||song.ana!==5){const r=await analyzeAudio(buf,song.title);Object.assign(song,{notes:r.notes,beats:r.beats,bpm:r.bpm,free:r.free,ana:5});delete song.grid;rec.lead=r.lead;
   await DB.put({...song},{data:rec.data,lead:r.lead})}
  const h=new Int16Array(rec.lead),n=buf.length,lead=ctx.createBuffer(1,n,buf.sampleRate),ld=lead.getChannelData(0),rest=ctx.createBuffer(2,n,buf.sampleRate);
  for(let i=0;i<n;i++){const p=i/2,a=Math.floor(p),f=p-a;ld[i]=((h[a]||0)*(1-f)+(h[a+1]||0)*f)/32767}
  for(let c=0;c<2;c++){const src=buf.getChannelData(Math.min(c,buf.numberOfChannels-1)),d=rest.getChannelData(c);for(let i=0;i<n;i++)d[i]=src[i]-ld[i]}
  const r={rest,lead};remember(k,r);return r}
-/* tuiles d'un import : les attaques les plus marquées d'abord, celles sur les temps favorisées, espacées selon la difficulté */
-const AKEEP={facile:.3,normal:.5,avance:.68,difficile:.8,expert:.9,maitre:1};
+/* imports : 3 densités qui suivent la musique ; la difficulté choisie ne règle que la vitesse, les vies et la précision */
+const DENS={facile:0,normal:1,avance:1,difficile:2,expert:2,maitre:2},DGAP=[.36,.19,.1];
 function noteChart(song,D,rng){
- const keep=AKEEP[diffKey]||.5,pr=x=>x.s*(x.l===0?1.6:x.l===1?1.3:x.l===2?1.05:.9)*(x.k==='v'?1:.85);
- const cand=[...song.notes].sort((a,b)=>pr(b)-pr(a)),acc=[],cell=new Map(),gap=D.gap*1.1,lim=Math.round(cand.length*keep);
- for(const o of cand){if(acc.length>=lim)break;const k=Math.floor(o.t/gap);let ok=true;for(let c=k-1;c<=k+1&&ok;c++)for(const t of cell.get(c)||[])if(Math.abs(t-o.t)<gap-1e-3){ok=false;break}
-  if(ok){acc.push(o);(cell.get(k)||cell.set(k,[]).get(k)).push(o.t)}}
- const ss=acc.map(pr).sort((a,b)=>b-a),strong=ss[Math.floor(ss.length*.12)]??1e9;
- return acc.sort((a,b)=>a.t-b.t).map(o=>({t:o.t,d:0,merged:0,ns:[],dbl:o.l===0&&pr(o)>=strong&&rng()<D.dbl?-1:null}))}
+ const lvl=DENS[diffKey]??1,gap=DGAP[lvl],pick=song.notes.filter(n=>n.l<=lvl||(lvl===0&&n.l===1&&n.s>=1.3)),out=[];
+ for(const n of pick){const l=out[out.length-1];if(l&&n.t-l.t<gap){if(n.l<l.l||(n.l===l.l&&n.s>l.s))out[out.length-1]=n;continue}out.push(n)}
+ const ss=out.map(n=>n.s).sort((a,b)=>b-a),strong=ss[Math.floor(ss.length*.12)]??1e9;
+ return out.map(o=>({t:o.t,d:0,merged:0,ns:[],dbl:lvl>0&&o.l===0&&o.s>=strong&&rng()<D.dbl?-1:null}))}
 
 /* ================= MIDI ================= */
 function parseMidi(ab){
@@ -704,7 +722,7 @@ $('#file').addEventListener('change',async e=>{const files=[...e.target.files];e
    else{busy('Analyse du rythme…',title,0);const buf=await ctx.decodeAudioData(ab.slice(0));
     const r=await analyzeAudio(buf,title);busy();
     if(r.notes.length<16)throw new Error('Rythme introuvable dans ce fichier');
-    await DB.put({id,title,kind:'audio',notes:r.notes,beats:r.beats,bpm:r.bpm,ana:4,dur:buf.duration,added:Date.now()},{data:ab,lead:r.lead});toast('« '+title+' » ajouté, '+Math.round(r.bpm)+' BPM')}}
+    await DB.put({id,title,kind:'audio',notes:r.notes,beats:r.beats,bpm:r.bpm,free:r.free,ana:5,dur:buf.duration,added:Date.now()},{data:ab,lead:r.lead});toast('« '+title+' » ajouté, '+Math.round(r.bpm)+' BPM')}}
   catch(err){busy();toast((err&&err.message&&err.message.length<80?err.message:'Impossible de lire ce fichier')+' ('+f.name+')')}}
  if(!DB.ok)toast('Stockage indisponible ici : les imports dureront jusqu\'à la fermeture');
  render()});
